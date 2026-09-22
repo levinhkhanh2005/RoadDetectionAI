@@ -1,0 +1,18 @@
+# Cấu hình dữ liệu cho huấn luyện YOLOv8
+# Môn học: Trí Tuệ Nhân Tạo
+
+# Đường dẫn thư mục gốc dataset (hoặc đường dẫn tuyệt đối)
+path: ../dataset # Đường dẫn gốc đến thư mục dataset
+
+# Đường dẫn tương đối từ 'path'
+train: images/train   # Thư mục ảnh tập huấn luyện
+val: images/val       # Thư mục ảnh tập kiểm định (Validation)
+test: images/test     # (Tùy chọn) Thư mục ảnh tập kiểm thử độc lập
+
+# Định nghĩa các lớp cần nhận diện (Classes)
+names:
+  0: car          # Ô tô con
+  1: motorcycle   # Xe máy
+  2: bus          # Xe buýt
+  3: truck        # Xe tải
+  4: bicycle      # Xe đạp

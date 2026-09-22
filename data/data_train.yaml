@@ -1,0 +1,10 @@
+# Cấu hình dataset huấn luyện phương tiện giao thông (Vietnam Vehicle Detection)
+# Thư mục dữ liệu: E:/trainAI
+
+path: E:/trainAI        # Đường dẫn gốc tới thư mục dataset
+train: train/images     # Thư mục ảnh huấn luyện (Train)
+val: valid/images       # Thư mục ảnh kiểm định (Validation)
+test: test/images       # Thư mục ảnh kiểm thử (Test)
+
+nc: 4
+names: ['car', 'motorcycle', 'bus', 'truck']

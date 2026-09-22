@@ -1,0 +1,4 @@
+run,model,data,selected_epoch,epochs_done,precision,recall,map50,map50_95,fitness,train_box_loss,train_cls_loss,train_dfl_loss,val_box_loss,val_cls_loss,val_dfl_loss,time_seconds,imgsz,batch,device,optimizer,path
+traffic_model-2,yolov8n.pt,dataset/data.yaml,30,30,0.82505,0.82293,0.88864,0.68427,0.704707,0.78478,0.42582,0.90503,0.90666,0.51562,0.95162,3671.25,640,8,0,auto,runs\detect\traffic_model-2
+traffic_model_v2,yolov8s.pt,dataset/data.yaml,3,3,0.83556,0.66989,0.74984,0.51404,0.53762,1.17792,0.78759,1.07348,1.16259,0.73551,1.03228,885.78,640,8,0,auto,runs\detect\traffic_model_v2
+traffic_model,yolov8n.pt,dataset/data.yaml,1,1,0.7951,0.60031,0.67533,0.46998,0.49051500000000003,1.15462,1.43881,1.03305,1.03428,0.81836,0.98129,845.753,640,8,,auto,runs\detect\traffic_model
