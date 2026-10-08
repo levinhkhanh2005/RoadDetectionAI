@@ -88,3 +88,4 @@ Trình duyệt sẽ tự động mở trang web dashboard tại địa chỉ `ht
 - `r`: Khởi tạo lại (Reset) bộ đếm xe về 0.
 
 ---
+- Link tải dataset mẫu: https://drive.google.com/drive/folders/1u2a9F1EqX_Y2ljNr-AsNs9XWLy5n0p1Z?hl=vi
