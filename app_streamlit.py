@@ -15,6 +15,7 @@ from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, WebRtcMode
 from src.detector import VehicleDetector, VEHICLE_COLORS, CLASS_NAMES_VI
 from src.tracker import VehicleCounter
 from src.visualizer import Visualizer
+from src.image_processing import ImageProcessor
 
 
 # Cấu hình trang Streamlit
@@ -119,7 +120,7 @@ def load_all_experiments(base_dir: str):
 def main():
     # Header
     st.markdown('<div class="main-header">🚗 HỆ THỐNG NHẬN DIỆN & ĐẾM PHƯƠNG TIỆN ĐƯỜNG BỘ</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Công nghệ: YOLOv8 + ByteTrack + OpenCV</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Công nghệ: YOLOv8 + ByteTrack + OpenCV + Xử lý Ảnh Cổ điển</div>', unsafe_allow_html=True)
 
     # Sidebar điều khiển
     with st.sidebar:
@@ -151,11 +152,15 @@ def main():
         detector = load_detector(model_file)
     visualizer = Visualizer()
 
+    # Khởi tạo bộ xử lý ảnh cổ điển
+    img_processor = ImageProcessor()
+
     # Tabs chức năng
-    tab_webcam, tab_video, tab_image, tab_analytics, tab_theory = st.tabs([
+    tab_webcam, tab_video, tab_image, tab_cv, tab_analytics, tab_theory = st.tabs([
         "📷 Webcam trực tiếp",
         "📹 Nhận diện & Đếm Video",
         "🖼️ Nhận diện Ảnh tĩnh",
+        "🔬 Xử lý Ảnh Cổ điển",
         "📈 Đánh giá & Huấn luyện",
         "📖 Cơ sở lý thuyết & Báo cáo"
     ])
@@ -401,7 +406,412 @@ def main():
                     st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
 
     # ----------------------------------------------------
-    # TAB 3: ĐÁNH GIÁ & LỊCH SỬ HUẤN LUYỆN
+    # TAB 3: XỬ LÝ ẢNH CỔ ĐIỂN (CLASSICAL COMPUTER VISION)
+    # ----------------------------------------------------
+    with tab_cv:
+        st.subheader("🔬 Xử lý Ảnh & Thị giác Máy tính — Phương pháp Cổ điển")
+        st.caption("Triển khai các kỹ thuật xử lý ảnh nền tảng (không dùng Deep Learning) để phát hiện phương tiện. "
+                   "Đồng thời so sánh trực tiếp với kết quả từ mô hình YOLOv8.")
+
+        cv_sub_tab1, cv_sub_tab2, cv_sub_tab3, cv_sub_tab4, cv_sub_tab5 = st.tabs([
+            "🖼️ Pipeline Xử lý Ảnh",
+            "🔍 Phát hiện Cạnh",
+            "⚙️ Phép Hình thái học",
+            "📹 Trừ nền Video (Background Subtraction)",
+            "⚔️ So sánh AI vs Cổ điển"
+        ])
+
+        # ----- SUB TAB 1: PIPELINE XỬ LÝ ẢNH TĨNH -----
+        with cv_sub_tab1:
+            st.markdown("#### Pipeline xử lý ảnh tĩnh hoàn chỉnh")
+            st.info(
+                "**Quy trình:** Ảnh gốc → Grayscale → CLAHE → Gaussian Blur → Canny Edge Detection "
+                "→ Morphology (Closing + Dilation) → Contour Detection → Bounding Box"
+            )
+
+            cv_uploaded_img = st.file_uploader(
+                "Tải lên ảnh giao thông (.jpg, .png):",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="cv_pipeline_upload"
+            )
+
+            col_param1, col_param2, col_param3 = st.columns(3)
+            with col_param1:
+                cv_blur_k = st.slider("Kích thước Gaussian Kernel:", 3, 15, 5, 2, key="cv_blur")
+            with col_param2:
+                cv_canny_low = st.slider("Canny ngưỡng thấp:", 10, 150, 50, 5, key="cv_canny_lo")
+                cv_canny_high = st.slider("Canny ngưỡng cao:", 50, 300, 150, 5, key="cv_canny_hi")
+            with col_param3:
+                cv_min_area = st.slider("Diện tích contour tối thiểu:", 100, 5000, 800, 100, key="cv_min_area")
+                cv_clahe_clip = st.slider("CLAHE Clip Limit:", 1.0, 10.0, 3.0, 0.5, key="cv_clahe")
+
+            if cv_uploaded_img is not None:
+                img_pil = Image.open(cv_uploaded_img)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                else:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+
+                with st.spinner("Đang xử lý pipeline ảnh cổ điển..."):
+                    pipeline_result = img_processor.full_pipeline_image(
+                        img_bgr,
+                        blur_ksize=cv_blur_k,
+                        canny_low=cv_canny_low,
+                        canny_high=cv_canny_high,
+                        min_contour_area=cv_min_area,
+                        clahe_clip=cv_clahe_clip
+                    )
+
+                steps = pipeline_result["steps"]
+                dets = pipeline_result["detections"]
+
+                st.success(f"✅ Pipeline hoàn tất! Phát hiện **{len(dets)} vùng phương tiện** bằng phương pháp cổ điển.")
+
+                # Hiển thị từng bước
+                st.markdown("##### Các bước xử lý trung gian:")
+                step_cols = st.columns(4)
+                step_names = list(steps.keys())
+                for i, name in enumerate(step_names):
+                    with step_cols[i % 4]:
+                        img_step = steps[name]
+                        if len(img_step.shape) == 2:
+                            st.image(img_step, caption=name, use_container_width=True, clamp=True)
+                        else:
+                            st.image(cv2.cvtColor(img_step, cv2.COLOR_BGR2RGB), caption=name, use_container_width=True)
+
+                # Bảng chi tiết contours
+                if dets:
+                    st.markdown("##### Chi tiết các phương tiện phát hiện được:")
+                    table_cv = []
+                    for idx, d in enumerate(dets, 1):
+                        x1, y1, x2, y2 = d["bbox"]
+                        table_cv.append({
+                            "STT": idx,
+                            "Diện tích (px²)": int(d["area"]),
+                            "Tỷ lệ W/H": d["aspect_ratio"],
+                            "Tâm (cx, cy)": f"({d['center'][0]}, {d['center'][1]})",
+                            "BBox [x1,y1,x2,y2]": f"[{x1},{y1},{x2},{y2}]"
+                        })
+                    st.dataframe(pd.DataFrame(table_cv), hide_index=True, use_container_width=True)
+
+        # ----- SUB TAB 2: PHÁT HIỆN CẠNH -----
+        with cv_sub_tab2:
+            st.markdown("#### So sánh các phương pháp Phát hiện Cạnh (Edge Detection)")
+            st.info(
+                "Ba phương pháp phổ biến: **Sobel** (gradient bậc 1 theo X/Y), "
+                "**Canny** (multi-stage, chuẩn công nghiệp), **Laplacian** (đạo hàm bậc 2, đẳng hướng)."
+            )
+
+            edge_uploaded = st.file_uploader(
+                "Tải ảnh để so sánh edge detection:",
+                type=["jpg", "png", "jpeg"],
+                key="edge_upload"
+            )
+
+            if edge_uploaded is not None:
+                img_pil = Image.open(edge_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                else:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    edge_canny_lo = st.slider("Canny Low:", 10, 200, 50, 5, key="edge_canny_lo")
+                    edge_canny_hi = st.slider("Canny High:", 50, 400, 150, 10, key="edge_canny_hi")
+                with col_e2:
+                    edge_sobel_k = st.slider("Sobel Kernel Size:", 3, 7, 3, 2, key="edge_sobel_k")
+
+                # Tính toán
+                canny_result = img_processor.detect_edges_canny(img_bgr, edge_canny_lo, edge_canny_hi)
+                sobel_result = img_processor.detect_edges_sobel(img_bgr, ksize=edge_sobel_k)
+                laplacian_result = img_processor.detect_edges_laplacian(img_bgr)
+
+                # Hiển thị
+                st.markdown("##### Kết quả so sánh:")
+                ce1, ce2, ce3, ce4 = st.columns(4)
+                with ce1:
+                    st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                with ce2:
+                    st.image(canny_result, caption="Canny Edge", use_container_width=True, clamp=True)
+                with ce3:
+                    st.image(sobel_result["magnitude"], caption="Sobel Magnitude", use_container_width=True, clamp=True)
+                with ce4:
+                    st.image(laplacian_result, caption="Laplacian", use_container_width=True, clamp=True)
+
+                # Chi tiết Sobel X/Y
+                with st.expander("🔎 Xem chi tiết Sobel X và Sobel Y"):
+                    cs1, cs2 = st.columns(2)
+                    with cs1:
+                        st.image(sobel_result["sobel_x"], caption="Sobel X (cạnh dọc)", use_container_width=True, clamp=True)
+                    with cs2:
+                        st.image(sobel_result["sobel_y"], caption="Sobel Y (cạnh ngang)", use_container_width=True, clamp=True)
+
+                    st.markdown("""
+                    **Giải thích:**
+                    - **Sobel X** tính gradient theo hướng ngang → phát hiện **cạnh dọc** (viền trái/phải xe).
+                    - **Sobel Y** tính gradient theo hướng dọc → phát hiện **cạnh ngang** (nóc, gầm xe).
+                    - **Magnitude** = √(Gx² + Gy²): kết hợp cả 2 hướng để có bản đồ cạnh hoàn chỉnh.
+                    """)
+
+        # ----- SUB TAB 3: PHÉP HÌNH THÁI HỌC -----
+        with cv_sub_tab3:
+            st.markdown("#### Minh họa các Phép toán Hình thái học (Morphological Operations)")
+            st.info(
+                "Các phép toán trên ảnh nhị phân: **Erosion** (co), **Dilation** (giãn), "
+                "**Opening** (loại nhiễu), **Closing** (lấp lỗ), **Gradient** (trích viền)."
+            )
+
+            morph_uploaded = st.file_uploader(
+                "Tải ảnh để demo hình thái học:",
+                type=["jpg", "png", "jpeg"],
+                key="morph_upload"
+            )
+
+            if morph_uploaded is not None:
+                img_pil = Image.open(morph_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                else:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+
+                morph_canny_lo = st.slider("Ngưỡng Canny (tạo mask nhị phân):", 20, 200, 80, 10, key="morph_canny")
+
+                # Tạo mask nhị phân từ Canny edge
+                binary_mask = img_processor.detect_edges_canny(img_bgr, morph_canny_lo, morph_canny_lo * 2)
+
+                # Demo tất cả phép toán
+                morph_steps = img_processor.demonstrate_morphology_steps(binary_mask)
+
+                st.markdown("##### Kết quả từng phép toán:")
+                mc = st.columns(3)
+                morph_names = list(morph_steps.keys())
+                morph_labels = {
+                    "original": "Mask gốc (Canny)",
+                    "erosion": "Erosion (Co nhỏ)",
+                    "dilation": "Dilation (Giãn nở)",
+                    "opening": "Opening (Mở = E→D)",
+                    "closing": "Closing (Đóng = D→E)",
+                    "gradient": "Gradient (D - E)"
+                }
+                for i, name in enumerate(morph_names):
+                    with mc[i % 3]:
+                        st.image(morph_steps[name], caption=morph_labels.get(name, name), use_container_width=True, clamp=True)
+
+                st.markdown("""
+                **Ý nghĩa trong bài toán phát hiện xe:**
+                - **Erosion**: Loại bỏ nhiễu nhỏ (hạt muối) trên mask phân vùng.
+                - **Dilation**: Lấp đầy các lỗ hổng nhỏ bên trong vùng xe.
+                - **Opening** (Erosion → Dilation): Loại nhiễu mà không thay đổi kích thước đối tượng lớn.
+                - **Closing** (Dilation → Erosion): Nối các vùng rời rạc của cùng 1 xe thành vùng liền mạch.
+                - **Morphological Gradient**: Trích xuất đường biên hình thái, tương tự edge detection.
+                """)
+
+        # ----- SUB TAB 4: BACKGROUND SUBTRACTION (VIDEO) -----
+        with cv_sub_tab4:
+            st.markdown("#### Phát hiện phương tiện bằng Trừ nền (Background Subtraction)")
+            st.info(
+                "Phương pháp cổ điển để phát hiện xe đang di chuyển trong video: "
+                "So sánh frame hiện tại với mô hình nền thích nghi (MOG2/KNN) "
+                "để tách foreground (phương tiện) ra khỏi background (đường, cây, ...).")
+
+            bg_method = st.radio("Chọn thuật toán trừ nền:", ["MOG2", "KNN"], horizontal=True, key="bg_method")
+
+            bg_source = st.radio("Chọn nguồn video:",
+                                 ["Tải lên video", "Dùng video mẫu có sẵn"],
+                                 horizontal=True, key="bg_source")
+
+            bg_video_path = None
+            if bg_source == "Tải lên video":
+                bg_uploaded = st.file_uploader("Tải video:", type=["mp4", "avi", "mov"], key="bg_video_upload")
+                if bg_uploaded is not None:
+                    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                    tfile.write(bg_uploaded.read())
+                    bg_video_path = tfile.name
+            else:
+                sample_dir = "data/samples"
+                os.makedirs(sample_dir, exist_ok=True)
+                sample_videos = [f for f in os.listdir(sample_dir) if f.endswith((".mp4", ".avi"))]
+                if sample_videos:
+                    bg_selected = st.selectbox("Chọn video mẫu:", sample_videos, key="bg_sample_select")
+                    bg_video_path = os.path.join(sample_dir, bg_selected)
+                else:
+                    st.warning("Chưa có video mẫu trong thư mục `data/samples/`.")
+
+            col_bg_param1, col_bg_param2 = st.columns(2)
+            with col_bg_param1:
+                bg_min_area = st.slider("Diện tích contour tối thiểu:", 200, 5000, 1200, 100, key="bg_min_area")
+            with col_bg_param2:
+                bg_max_area = st.slider("Diện tích contour tối đa:", 5000, 200000, 80000, 5000, key="bg_max_area")
+
+            if bg_video_path and os.path.exists(bg_video_path):
+                bg_start_btn = st.button("▶️ Bắt đầu xử lý Background Subtraction", type="primary", key="bg_start")
+
+                if bg_start_btn:
+                    img_processor.reset_background_subtractor(bg_method)
+
+                    cap = cv2.VideoCapture(bg_video_path)
+                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 100
+
+                    col_bg_view1, col_bg_view2 = st.columns(2)
+                    bg_display_orig = col_bg_view1.empty()
+                    bg_display_mask = col_bg_view2.empty()
+                    col_bg_view3, col_bg_view4 = st.columns(2)
+                    bg_display_clean = col_bg_view3.empty()
+                    bg_display_result = col_bg_view4.empty()
+                    bg_progress = st.progress(0)
+                    bg_status = st.empty()
+
+                    frame_idx = 0
+                    while cap.isOpened():
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+
+                        bg_pipeline = img_processor.full_pipeline_video_frame(
+                            frame, method=bg_method,
+                            min_contour_area=bg_min_area,
+                            max_contour_area=bg_max_area
+                        )
+
+                        # Hiển thị 4 cửa sổ
+                        bg_display_orig.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+                                             caption="Frame gốc", use_container_width=True)
+                        bg_display_mask.image(bg_pipeline["fg_mask_raw"],
+                                             caption=f"Foreground Mask ({bg_method} thô)", use_container_width=True, clamp=True)
+                        bg_display_clean.image(bg_pipeline["fg_mask_clean"],
+                                              caption="Mask sau Morphology", use_container_width=True, clamp=True)
+                        bg_display_result.image(cv2.cvtColor(bg_pipeline["result"], cv2.COLOR_BGR2RGB),
+                                               caption=f"Kết quả: {len(bg_pipeline['detections'])} xe", use_container_width=True)
+
+                        frame_idx += 1
+                        bg_progress.progress(min(frame_idx / total_frames, 1.0))
+                        bg_status.markdown(f"Frame **{frame_idx}/{total_frames}** — Phát hiện: **{len(bg_pipeline['detections'])}** phương tiện")
+
+                    cap.release()
+                    st.success("✅ Xử lý video hoàn tất!")
+
+        # ----- SUB TAB 5: SO SÁNH YOLOv8 vs CỔ ĐIỂN -----
+        with cv_sub_tab5:
+            st.markdown("#### ⚔️ So sánh: YOLOv8 (Deep Learning) vs Xử lý Ảnh Cổ điển")
+            st.info(
+                "Tải lên một ảnh giao thông để chạy đồng thời 2 phương pháp và so sánh kết quả "
+                "về số lượng phát hiện, thời gian xử lý, và chất lượng nhận diện."
+            )
+
+            cmp_uploaded = st.file_uploader(
+                "Tải ảnh giao thông để so sánh:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="cmp_upload"
+            )
+
+            if cmp_uploaded is not None:
+                img_pil = Image.open(cmp_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                else:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+
+                st.markdown("---")
+
+                # --- PHƯƠNG PHÁP 1: YOLOv8 ---
+                with st.spinner("🤖 Đang chạy YOLOv8..."):
+                    t1 = time.time()
+                    yolo_dets = detector.detect(img_bgr, conf_threshold=conf_thresh, iou_threshold=iou_thresh)
+                    t_yolo = (time.time() - t1) * 1000
+
+                yolo_img = visualizer.draw_detections(img_bgr, yolo_dets, VEHICLE_COLORS)
+                yolo_summary = {"car": 0, "motorcycle": 0, "bus": 0, "truck": 0, "bicycle": 0}
+                for d in yolo_dets:
+                    cls = d["class_en"]
+                    if cls in yolo_summary:
+                        yolo_summary[cls] += 1
+
+                # --- PHƯƠNG PHÁP 2: Classical CV ---
+                with st.spinner("🔬 Đang chạy pipeline xử lý ảnh cổ điển..."):
+                    t2 = time.time()
+                    cv_result = img_processor.full_pipeline_image(img_bgr)
+                    t_cv = (time.time() - t2) * 1000
+
+                cv_img = cv_result["result"]
+                cv_dets = cv_result["detections"]
+
+                # --- HIỂN THỊ SO SÁNH SONG SONG ---
+                col_yolo, col_cv = st.columns(2)
+                with col_yolo:
+                    st.markdown("##### 🤖 YOLOv8 (Deep Learning)")
+                    st.image(cv2.cvtColor(yolo_img, cv2.COLOR_BGR2RGB),
+                             caption=f"{len(yolo_dets)} phương tiện — {t_yolo:.1f}ms", use_container_width=True)
+                with col_cv:
+                    st.markdown("##### 🔬 Xử lý Ảnh Cổ điển")
+                    st.image(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB),
+                             caption=f"{len(cv_dets)} vùng phương tiện — {t_cv:.1f}ms", use_container_width=True)
+
+                # --- BẢNG SO SÁNH CHI TIẾT ---
+                st.markdown("##### 📊 Bảng so sánh tổng hợp:")
+
+                comparison_data = {
+                    "Tiêu chí": [
+                        "Số phương tiện phát hiện",
+                        "Thời gian xử lý",
+                        "Phân loại loại xe",
+                        "Độ chính xác ước lượng",
+                        "Cần GPU",
+                        "Cần huấn luyện dữ liệu",
+                        "Hoạt động trong mọi điều kiện"
+                    ],
+                    "🤖 YOLOv8 (AI)": [
+                        f"{len(yolo_dets)} phương tiện",
+                        f"{t_yolo:.1f} ms",
+                        "✅ Có (Car, Motorcycle, Bus, Truck, Bicycle)",
+                        "⭐⭐⭐⭐⭐ Rất cao",
+                        "⚡ Nhanh hơn nhiều nếu có GPU",
+                        "✅ Cần dataset + huấn luyện trước",
+                        "✅ Ổn định cao"
+                    ],
+                    "🔬 Cổ điển (CV)": [
+                        f"{len(cv_dets)} vùng",
+                        f"{t_cv:.1f} ms",
+                        "❌ Không (chỉ phát hiện vùng chuyển động/contour)",
+                        "⭐⭐ Trung bình (nhiều false positive)",
+                        "❌ Chỉ cần CPU",
+                        "❌ Không cần huấn luyện",
+                        "⚠️ Nhạy với ánh sáng, thời tiết"
+                    ]
+                }
+                st.table(pd.DataFrame(comparison_data))
+
+                # --- NHẬN XÉT TỰ ĐỘNG ---
+                with st.expander("📝 Xem nhận xét phân tích so sánh", expanded=True):
+                    st.markdown(f"""
+**Phân tích so sánh kết quả:**
+
+| Phương pháp | Số phát hiện | Thời gian |
+|---|---|---|
+| YOLOv8 (Deep Learning) | **{len(yolo_dets)}** phương tiện | **{t_yolo:.1f}** ms |
+| Xử lý Ảnh Cổ điển | **{len(cv_dets)}** vùng | **{t_cv:.1f}** ms |
+
+**Ưu điểm của YOLOv8:**
+- Phân loại chính xác từng loại xe (ô tô, xe máy, xe buýt, xe tải, xe đạp).
+- Robust trước nhiễu, thay đổi ánh sáng và góc chụp.
+- Mỗi detection có confidence score tin cậy.
+
+**Ưu điểm của Xử lý Ảnh Cổ điển:**
+- Không cần GPU hay dữ liệu huấn luyện — phù hợp hệ thống nhúng đơn giản.
+- Giải thích được từng bước (explainable/interpretable) — phù hợp cho nghiên cứu/giảng dạy.
+- Phát hiện mọi vật thể chuyển động, không giới hạn loại xe cố định.
+
+**Kết luận:** Trong thực tế, phương pháp **Deep Learning (YOLOv8)** vượt trội hơn về độ chính xác.
+Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt buộc vì nó là cơ sở lý thuyết
+để hiểu cách hoạt động bên trong các mạng nơ-ron tích chập (CNN).
+                    """)
+
+    # ----------------------------------------------------
+    # TAB 4: ĐÁNH GIÁ & LỊCH SỬ HUẤN LUYỆN
     # ----------------------------------------------------
     with tab_analytics:
         st.subheader("📈 Dashboard Đánh giá Mô hình & Lịch sử Huấn luyện")
@@ -630,22 +1040,59 @@ def main():
     # ----------------------------------------------------
     with tab_theory:
         st.markdown("""
-        ### 📚 Cơ sở Lý thuyết & Kiến trúc Mô hình (Môn Trí Tuệ Nhân Tạo)
+        ### 📚 Cơ sở Lý thuyết & Kiến trúc Hệ thống
         
-        #### 1. Mô hình YOLOv8 (You Only Look Once - Version 8)
+        ---
+        
+        #### PHẦN A — Trí Tuệ Nhân Tạo (Artificial Intelligence)
+
+        ##### 1. Mô hình YOLOv8 (You Only Look Once - Version 8)
         - **Kiến trúc Backbone**: Sử dụng mạng tích chập sâu (CSPDarknet cải tiến) để trích xuất đặc trưng hình ảnh ở nhiều tỉ lệ khác nhau.
         - **Head không dùng Anchor (Anchor-Free)**: Dự đoán trực tiếp tâm và kích thước hộp giới hạn (Bounding Box) thay vì phụ thuộc vào các anchor boxes định sẵn, giúp tăng tốc độ xử lý và độ chính xác đối với vật thể nhiều kích cỡ.
         - **Hàm mất mát (Loss Function)**:
           - *CIoU / DFL (Distribution Focal Loss)*: Tối ưu vị trí hộp bounding box.
           - *BCE Loss (Binary Cross-Entropy)*: Phân loại đối tượng đa nhãn.
 
-        #### 2. Thuật toán Theo dõi Đối tượng (ByteTrack)
+        ##### 2. Thuật toán Theo dõi Đối tượng (ByteTrack)
         - Khác với SORT truyền thống chỉ ghép các hộp có độ tin cậy cao, **ByteTrack** tận dụng cả những phát hiện có độ tin cậy thấp (low confidence detections) để duy trì dấu vết (track) ngay cả khi phương tiện bị che khuất một phần (occlusion).
         - Sử dụng bộ lọc **Kalman Filter** để ước lượng trạng thái vận tốc và dự đoán vị trí kế tiếp của từng xe.
 
-        #### 3. Thuật toán Đếm cắt vạch (Line Crossing Intersection)
-        - Dựa trên tích có hướng vector (Cross Product) giữa đoạn di chuyển của tâm xe $P_{prev} \to P_{curr}$ và đoạn thẳng vạch đếm ảo $A \to B$.
+        ##### 3. Thuật toán Đếm cắt vạch (Line Crossing Intersection)
+        - Dựa trên tích có hướng vector (Cross Product) giữa đoạn di chuyển của tâm xe $P_{prev} \\to P_{curr}$ và đoạn thẳng vạch đếm ảo $A \\to B$.
         - Ngăn chặn hiện tượng đếm trùng lặp bằng cấu trúc dữ liệu tập hợp `set()` lưu trữ các `track_id` đã từng cắt qua vạch.
+
+        ---
+
+        #### PHẦN B — Xử lý Ảnh & Thị giác Máy tính (Image Processing & Computer Vision)
+
+        ##### 4. Tiền xử lý ảnh (Image Preprocessing)
+        - **Chuyển đổi không gian màu:** RGB → Grayscale (giảm chiều dữ liệu), RGB → HSV (tách biệt sắc độ và cường độ sáng để phân vùng theo màu).
+        - **Lọc nhiễu Gaussian:** Sử dụng nhân tích chập (kernel) Gaussian 2D để làm mịn ảnh, loại bỏ nhiễu tần số cao trước khi phát hiện cạnh.
+        - **CLAHE (Contrast Limited Adaptive Histogram Equalization):** Cân bằng lược đồ xám cục bộ, tăng tương phản thích nghi theo từng vùng ảnh.
+
+        ##### 5. Phát hiện cạnh (Edge Detection)
+        - **Toán tử Sobel:** Tính xấp xỉ gradient bậc 1 theo hướng X (cạnh dọc) và Y (cạnh ngang) bằng tích chập với nhân 3×3. Magnitude = √(Gx² + Gy²).
+        - **Thuật toán Canny (1986):** Pipeline đa bước — Gaussian Blur → Gradient (Sobel) → Non-Maximum Suppression → Double Thresholding → Hysteresis Tracking.
+        - **Laplacian:** Đạo hàm bậc 2, phát hiện cạnh đẳng hướng nhưng nhạy với nhiễu.
+
+        ##### 6. Phép toán hình thái học (Morphological Operations)
+        - **Erosion (Co):** Thu nhỏ vùng trắng, loại nhiễu hạt nhỏ.
+        - **Dilation (Giãn nở):** Mở rộng vùng trắng, lấp lỗ hổng.
+        - **Opening (Mở = Erosion → Dilation):** Loại nhiễu muối tiêu mà không thay đổi kích thước đối tượng.
+        - **Closing (Đóng = Dilation → Erosion):** Nối các vùng rời rạc thành vùng liền mạch.
+
+        ##### 7. Trừ nền chuyển động (Background Subtraction)
+        - **MOG2 (Mixture of Gaussians v2):** Mô hình hóa mỗi pixel bằng hỗn hợp K phân phối Gaussian, tự động cập nhật tham số để thích nghi với nền thay đổi.
+        - **KNN:** Phân loại pixel foreground/background dựa trên K-láng giềng gần nhất trong lịch sử.
+
+        ##### 8. Phát hiện Contour & Bounding Box
+        - Tìm đường viền khép kín trên ảnh nhị phân bằng `cv2.findContours()`.
+        - Lọc theo diện tích (area) và tỷ lệ khung hình (aspect ratio) để loại nhiễu và chỉ giữ vùng có hình dạng xe hợp lệ.
+        - Tính Bounding Box bao quanh từng contour bằng `cv2.boundingRect()`.
+
+        ##### 9. Biến đổi phối cảnh (Perspective Transform)
+        - Sử dụng ma trận Homography (3×3) để chuyển đổi góc nhìn camera xiên thành Bird's Eye View (nhìn từ trên xuống).
+        - Ứng dụng: đo mật độ giao thông, khoảng cách giữa các xe chính xác hơn.
         """)
 
 
