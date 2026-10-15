@@ -1,78 +1,78 @@
 """
-Script tao video mau mo phong giao thong (Sample Traffic Video Generator)
-Tao ra file video data/samples/traffic.mp4 voi cac xe di chuyen qua vach dem
-de nguoi dung co the test truc tiep chuc nang Object Tracking va Counting Line.
+Script tai va chuan bi video mau giao thong thuc te (Real Traffic Sample Video Downloader)
+Cung cap cac video giam sat CCTV duong pho thuc te de kiem thu YOLOv8, ByteTrack va Vach dem xe.
 """
 
 import os
+import urllib.request
 import cv2
-import numpy as np
 
-def generate_traffic_video(output_path="data/samples/traffic.mp4", duration_sec=8, fps=25):
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    width, height = 960, 540
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
-    num_frames = duration_sec * fps
-    
-    # Tao nen duong pho (asphalt road with lanes)
-    def draw_background():
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
-        # Mat duong mau xam
-        frame[:, :] = (55, 55, 60)
-        # Vi he 2 ben
-        frame[:, :80] = (140, 140, 145)
-        frame[:, width-80:] = (140, 140, 145)
-        # Vach ke duong mau vang o giua
-        cv2.line(frame, (width // 2 - 3, 0), (width // 2 - 3, height), (0, 215, 255), 2)
-        cv2.line(frame, (width // 2 + 3, 0), (width // 2 + 3, height), (0, 215, 255), 2)
-        # Vach trang phan lan (net dut)
-        for y in range(0, height, 40):
-            cv2.line(frame, (width // 4, y), (width // 4, y + 20), (255, 255, 255), 2)
-            cv2.line(frame, (3 * width // 4, y), (3 * width // 4, y + 20), (255, 255, 255), 2)
-        return frame
+SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "samples")
+os.makedirs(SAMPLE_DIR, exist_ok=True)
 
-    # Danh sach xe mo phong (x, start_y, speed, color, w, h, label)
-    vehicles = [
-        {"x": 160, "y": -80, "speed": 3.5, "color": (40, 40, 220), "w": 65, "h": 120, "type": "car"},
-        {"x": 300, "y": -220, "speed": 4.2, "color": (220, 150, 30), "w": 40, "h": 70, "type": "motorcycle"},
-        {"x": 180, "y": -400, "speed": 2.8, "color": (30, 200, 220), "w": 80, "h": 190, "type": "bus"},
-        {"x": 580, "y": height + 60, "speed": -3.8, "color": (200, 200, 200), "w": 65, "h": 120, "type": "car"},
-        {"x": 720, "y": height + 180, "speed": -4.5, "color": (40, 220, 50), "w": 40, "h": 75, "type": "motorcycle"},
-        {"x": 600, "y": height + 350, "speed": -2.5, "color": (180, 50, 180), "w": 85, "h": 180, "type": "truck"},
-    ]
+HIGHWAY_URL = "https://raw.githubusercontent.com/AarohiSingla/Speed-detection-of-vehicles/main/highway.mp4"
+MOTORCYCLE_URL = "https://raw.githubusercontent.com/agung-madani/yolov8-motorcycle-counting/main/gerbanguin.mp4"
 
-    base_frame = draw_background()
 
-    print(f"[INFO] Dang khoi tao video mo phong tai: {output_path} ({num_frames} frames)...")
-    for f in range(num_frames):
-        frame = base_frame.copy()
-        for v in vehicles:
-            v["y"] += v["speed"]
-            vy = int(v["y"])
-            vx = int(v["x"])
-            vw = v["w"]
-            vh = v["h"]
-            
-            # Neu xe dang o trong khung hinh
-            if -vh < vy < height + vh:
-                # Ve than xe
-                cv2.rectangle(frame, (vx - vw//2, vy - vh//2), (vx + vw//2, vy + vh//2), v["color"], -1)
-                # Kính chắn gió
-                cv2.rectangle(frame, (vx - vw//2 + 5, vy - vh//4), (vx + vw//2 - 5, vy + vh//4), (80, 80, 80), -1)
-                # Đèn xe
-                if v["speed"] > 0: # Đi xuống
-                    cv2.circle(frame, (vx - vw//2 + 8, vy + vh//2 - 5), 4, (0, 255, 255), -1)
-                    cv2.circle(frame, (vx + vw//2 - 8, vy + vh//2 - 5), 4, (0, 255, 255), -1)
-                else: # Đi lên
-                    cv2.circle(frame, (vx - vw//2 + 8, vy - vh//2 + 5), 4, (0, 255, 255), -1)
-                    cv2.circle(frame, (vx + vw//2 - 8, vy - vh//2 + 5), 4, (0, 255, 255), -1)
+def download_file(url, target_path, label):
+    if os.path.exists(target_path) and os.path.getsize(target_path) > 100000:
+        print(f"[INFO] {label} da ton tai ({target_path})")
+        return True
+    print(f"[INFO] Dang tai {label} tu {url}...")
+    try:
+        urllib.request.urlretrieve(url, target_path)
+        print(f"[SUCCESS] Da tai {label}: {target_path}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Loi tai {label}: {e}")
+        return False
 
-        out.write(frame)
 
-    out.release()
-    print(f"[SUCCESS] Da tao xong video mau: {output_path}")
+def setup_real_samples():
+    print("=" * 60)
+    print("CHUAN BI VIDEO GIAO THONG THUC TE (REAL TRAFFIC DATASETS)")
+    print("=" * 60)
+
+    # 1. Tai video cao toc Full HD
+    highway_path = os.path.join(SAMPLE_DIR, "highway.mp4")
+    download_file(HIGHWAY_URL, highway_path, "Video Cao Toc (highway.mp4)")
+
+    # 2. Tai video xe may do thi
+    moto_path = os.path.join(SAMPLE_DIR, "motorcycles.mp4")
+    download_file(MOTORCYCLE_URL, moto_path, "Video Xe May Do Thi (motorcycles.mp4)")
+
+    # 3. Tao ban traffic.mp4 (720p, 16s) toi uu hoa cho CPU & Streamlit tu highway.mp4
+    traffic_path = os.path.join(SAMPLE_DIR, "traffic.mp4")
+    if not os.path.exists(traffic_path) or os.path.getsize(traffic_path) < 1000000:
+        if os.path.exists(highway_path):
+            print("[INFO] Dang tao ban toi uu traffic.mp4 (720p @ 25 FPS, 16s)...")
+            cap = cv2.VideoCapture(highway_path)
+            fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            target_w, target_h = 1280, 720
+            max_frames = int(fps * 16)
+
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            out = cv2.VideoWriter(traffic_path, fourcc, fps, (target_w, target_h))
+
+            count = 0
+            while cap.isOpened() and count < max_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                resized = cv2.resize(frame, (target_w, target_h))
+                out.write(resized)
+                count += 1
+
+            cap.release()
+            out.release()
+            print(f"[SUCCESS] Da tao xong traffic.mp4 ({count} frames)")
+
+    print("\n[HOAN TAT] Danh sach video mau thuc te tai data/samples/:")
+    for f in os.listdir(SAMPLE_DIR):
+        if f.endswith((".mp4", ".jpg", ".png")):
+            sz_mb = os.path.getsize(os.path.join(SAMPLE_DIR, f)) / (1024 * 1024)
+            print(f" - {f}: {sz_mb:.2f} MB")
+
 
 if __name__ == "__main__":
-    generate_traffic_video()
+    setup_real_samples()

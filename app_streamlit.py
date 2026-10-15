@@ -271,9 +271,18 @@ def main():
             # Video mẫu trong thư mục data/samples/
             sample_dir = "data/samples"
             os.makedirs(sample_dir, exist_ok=True)
-            sample_videos = [f for f in os.listdir(sample_dir) if f.endswith((".mp4", ".avi", ".mov"))]
+            sample_videos = [f for f in sorted(os.listdir(sample_dir)) if f.endswith((".mp4", ".avi", ".mov"))]
+            video_labels = {
+                "traffic.mp4": "🚗 traffic.mp4 (Cao tốc thực tế - 720p, tối ưu chạy mượt)",
+                "highway.mp4": "🛣️ highway.mp4 (Cao tốc Full HD 1080p - Lưu lượng xe lớn)",
+                "motorcycles.mp4": "🛵 motorcycles.mp4 (Đường phố đô thị - Nhận diện xe máy & ô tô)"
+            }
             if sample_videos:
-                selected_sample = st.selectbox("Chọn video mẫu:", sample_videos)
+                selected_sample = st.selectbox(
+                    "Chọn video mẫu:",
+                    sample_videos,
+                    format_func=lambda x: video_labels.get(x, f"📹 {x}")
+                )
                 video_path = os.path.join(sample_dir, selected_sample)
             else:
                 st.warning(f"Chưa có video mẫu trong thư mục `{sample_dir}`. Bạn có thể tải lên video ở tùy chọn bên trên!")
@@ -634,9 +643,19 @@ def main():
             else:
                 sample_dir = "data/samples"
                 os.makedirs(sample_dir, exist_ok=True)
-                sample_videos = [f for f in os.listdir(sample_dir) if f.endswith((".mp4", ".avi"))]
+                sample_videos = [f for f in sorted(os.listdir(sample_dir)) if f.endswith((".mp4", ".avi"))]
+                video_labels = {
+                    "traffic.mp4": "🚗 traffic.mp4 (Cao tốc thực tế - 720p, tối ưu chạy mượt)",
+                    "highway.mp4": "🛣️ highway.mp4 (Cao tốc Full HD 1080p - Lưu lượng xe lớn)",
+                    "motorcycles.mp4": "🛵 motorcycles.mp4 (Đường phố đô thị - Nhận diện xe máy & ô tô)"
+                }
                 if sample_videos:
-                    bg_selected = st.selectbox("Chọn video mẫu:", sample_videos, key="bg_sample_select")
+                    bg_selected = st.selectbox(
+                        "Chọn video mẫu:",
+                        sample_videos,
+                        format_func=lambda x: video_labels.get(x, f"📹 {x}"),
+                        key="bg_sample_select"
+                    )
                     bg_video_path = os.path.join(sample_dir, bg_selected)
                 else:
                     st.warning("Chưa có video mẫu trong thư mục `data/samples/`.")
