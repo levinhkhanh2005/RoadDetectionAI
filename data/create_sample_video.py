@@ -51,7 +51,7 @@ def setup_real_samples():
             target_w, target_h = 1280, 720
             max_frames = int(fps * 16)
 
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            fourcc = cv2.VideoWriter.fourcc(*"mp4v")
             out = cv2.VideoWriter(traffic_path, fourcc, fps, (target_w, target_h))
 
             count = 0
