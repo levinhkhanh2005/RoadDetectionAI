@@ -122,7 +122,7 @@ def process_video_or_camera(args):
         os.makedirs("data/output", exist_ok=True)
         out_filename = "output_detected.mp4" if not isinstance(source, str) else "output_" + os.path.basename(source)
         out_path = os.path.join("data/output", out_filename)
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter.fourcc(*"mp4v")
         writer = cv2.VideoWriter(out_path, fourcc, fps_video, (frame_width, frame_height))
         print(f"[INFO] Dang ghi video ra: {out_path}")
 
@@ -139,6 +139,7 @@ def process_video_or_camera(args):
     prev_time = time.time()
     fps_calc = 0.0
     frame_count = 0
+    disp_frame = None
 
     while cap.isOpened():
         if not paused:
@@ -183,7 +184,7 @@ def process_video_or_camera(args):
                 writer.write(disp_frame)
 
         # Hien thi cua so neu khong phai no-show
-        if not args.no_show:
+        if not args.no_show and disp_frame is not None:
             cv2.imshow("Road Vehicle Detection & Counting (AI)", disp_frame)
 
             # Bat phim tat

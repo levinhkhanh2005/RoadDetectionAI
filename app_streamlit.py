@@ -422,12 +422,18 @@ def main():
         st.caption("Triển khai các kỹ thuật xử lý ảnh nền tảng (không dùng Deep Learning) để phát hiện phương tiện. "
                    "Đồng thời so sánh trực tiếp với kết quả từ mô hình YOLOv8.")
 
-        cv_sub_tab1, cv_sub_tab2, cv_sub_tab3, cv_sub_tab4, cv_sub_tab5 = st.tabs([
+        (cv_sub_tab1, cv_sub_tab2, cv_sub_tab3, cv_sub_tab4, cv_sub_tab5,
+         cv_sub_tab6, cv_sub_tab7, cv_sub_tab8, cv_sub_tab9, cv_sub_tab10) = st.tabs([
             "🖼️ Pipeline Xử lý Ảnh",
             "🔍 Phát hiện Cạnh",
             "⚙️ Phép Hình thái học",
-            "📹 Trừ nền Video (Background Subtraction)",
-            "⚔️ So sánh AI vs Cổ điển"
+            "📹 Trừ nền Video",
+            "⚔️ So sánh AI vs Cổ điển",
+            "✨ Nâng cao Chất lượng",
+            "📊 Biểu đồ Tần suất",
+            "🔬 Biên Nâng cao",
+            "🧩 Phân vùng Ảnh",
+            "📦 Nén Dữ liệu Ảnh"
         ])
 
         # ----- SUB TAB 1: PIPELINE XỬ LÝ ẢNH TĨNH -----
@@ -829,6 +835,646 @@ Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt
 để hiểu cách hoạt động bên trong các mạng nơ-ron tích chập (CNN).
                     """)
 
+        # ----- SUB TAB 6: NÂNG CAO CHẤT LƯỢNG ẢNH -----
+        with cv_sub_tab6:
+            st.markdown("#### ✨ Nâng cao Chất lượng Ảnh (Image Enhancement)")
+            st.info(
+                "Các phương pháp tăng cường ảnh: **Gamma Correction**, **Log Transform**, "
+                "**Contrast Stretching**, **Unsharp Masking**, **Denoising (NLM/Bilateral/Median)**, **White Balance**."
+            )
+
+            enh_uploaded = st.file_uploader(
+                "Tải ảnh để demo nâng cao chất lượng:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="enh_upload"
+            )
+
+            if enh_uploaded is not None:
+                img_pil = Image.open(enh_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_bgr = img_np
+
+                enh_method = st.selectbox("Chọn phương pháp nâng cao:", [
+                    "So sánh tất cả",
+                    "Gamma Correction",
+                    "Auto Brightness",
+                    "Log Transform",
+                    "Power-Law Transform",
+                    "Contrast Stretching",
+                    "Unsharp Masking (Làm sắc nét)",
+                    "Denoising (Khử nhiễu)",
+                    "White Balance (Cân bằng trắng)",
+                ], key="enh_method")
+
+                if enh_method == "So sánh tất cả":
+                    with st.spinner("Đang xử lý tất cả phương pháp..."):
+                        demo = img_processor.demonstrate_enhancement_methods(img_bgr)
+                    st.markdown("##### Kết quả so sánh:")
+                    cols = st.columns(4)
+                    for i, (name, img_out) in enumerate(demo.items()):
+                        with cols[i % 4]:
+                            if len(img_out.shape) == 2:
+                                st.image(img_out, caption=name, use_container_width=True, clamp=True)
+                            else:
+                                st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), caption=name, use_container_width=True)
+
+                elif enh_method == "Gamma Correction":
+                    gamma_val = st.slider("Giá trị Gamma:", 0.1, 5.0, 1.0, 0.1, key="gamma_val")
+                    result = img_processor.apply_gamma_correction(img_bgr, gamma_val)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Gamma = {gamma_val}", use_container_width=True)
+                    st.markdown(f"""**Giải thích:** Gamma = {gamma_val:.1f} → {'Tăng sáng vùng tối' if gamma_val < 1 else 'Giảm sáng / tăng contrast vùng sáng' if gamma_val > 1 else 'Không thay đổi'}""")
+
+                elif enh_method == "Auto Brightness":
+                    target = st.slider("Mean intensity mục tiêu:", 50.0, 200.0, 120.0, 5.0, key="auto_bright_target")
+                    result = img_processor.auto_adjust_brightness(img_bgr, target)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Auto Brightness (target={target})", use_container_width=True)
+
+                elif enh_method == "Log Transform":
+                    result = img_processor.apply_log_transform(img_bgr)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption="Log Transform", use_container_width=True)
+                    st.markdown("**Giải thích:** s = c × log(1 + r). Mở rộng dải pixel tối, nén dải pixel sáng.")
+
+                elif enh_method == "Power-Law Transform":
+                    pl_gamma = st.slider("Gamma:", 0.1, 5.0, 0.4, 0.1, key="pl_gamma")
+                    pl_c = st.slider("Hằng số c:", 0.5, 3.0, 1.0, 0.1, key="pl_c")
+                    result = img_processor.apply_power_law_transform(img_bgr, pl_gamma, pl_c)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Power-Law (γ={pl_gamma}, c={pl_c})", use_container_width=True)
+
+                elif enh_method == "Contrast Stretching":
+                    cs_low = st.slider("Percentile thấp (%):", 0.0, 10.0, 2.0, 0.5, key="cs_low")
+                    cs_high = st.slider("Percentile cao (%):", 90.0, 100.0, 98.0, 0.5, key="cs_high")
+                    result = img_processor.apply_contrast_stretching(img_bgr, cs_low, cs_high)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Contrast Stretching [{cs_low}%, {cs_high}%]", use_container_width=True)
+
+                elif enh_method == "Unsharp Masking (Làm sắc nét)":
+                    us_amount = st.slider("Cường độ (amount):", 0.5, 5.0, 1.5, 0.1, key="us_amount")
+                    us_sigma = st.slider("Sigma Gaussian:", 0.5, 5.0, 1.0, 0.5, key="us_sigma")
+                    result = img_processor.apply_unsharp_masking(img_bgr, sigma=us_sigma, amount=us_amount)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Unsharp Masking (amount={us_amount})", use_container_width=True)
+
+                elif enh_method == "Denoising (Khử nhiễu)":
+                    dn_method = st.selectbox("Phương pháp khử nhiễu:", ["nlm", "bilateral", "median"], key="dn_method")
+                    dn_h = st.slider("Cường độ lọc h (NLM):", 3.0, 30.0, 10.0, 1.0, key="dn_h")
+                    result = img_processor.apply_denoising(img_bgr, method=dn_method, h=dn_h)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Denoising ({dn_method})", use_container_width=True)
+
+                elif enh_method == "White Balance (Cân bằng trắng)":
+                    if len(img_bgr.shape) == 3:
+                        result = img_processor.apply_white_balance_grayworld(img_bgr)
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                        with c2:
+                            st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption="White Balance (Gray World)", use_container_width=True)
+                    else:
+                        st.warning("White Balance chỉ áp dụng cho ảnh màu.")
+
+        # ----- SUB TAB 7: BIỂU ĐỒ TẦN SUẤT -----
+        with cv_sub_tab7:
+            st.markdown("#### 📊 Biểu đồ Tần suất (Histogram Analysis)")
+            st.info(
+                "Phân tích phân bố cường độ pixel: **Histogram**, **Normalized Histogram**, "
+                "**CDF (Cumulative Distribution Function)**, **So sánh Histogram**, **Histogram Backprojection**."
+            )
+
+            hist_uploaded = st.file_uploader(
+                "Tải ảnh để phân tích histogram:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="hist_upload"
+            )
+
+            if hist_uploaded is not None:
+                img_pil = Image.open(hist_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_bgr = img_np
+
+                hist_mode = st.selectbox("Chế độ phân tích:", [
+                    "Histogram + CDF",
+                    "So sánh hiệu quả các phép biến đổi",
+                    "So sánh Histogram 2 ảnh",
+                ], key="hist_mode")
+
+                if hist_mode == "Histogram + CDF":
+                    draw_cdf = st.checkbox("Hiển thị đường CDF (tích lũy)", value=True, key="hist_cdf")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        hist_img = img_processor.draw_histogram_image(img_bgr, draw_cdf=draw_cdf)
+                        st.image(cv2.cvtColor(hist_img, cv2.COLOR_BGR2RGB), caption="Biểu đồ Histogram", use_container_width=True)
+
+                    # Thống kê cơ bản
+                    gray = img_processor.convert_grayscale(img_bgr)
+                    st.markdown("##### Thống kê cường độ pixel:")
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    mc1.metric("Mean", f"{np.mean(gray):.1f}")
+                    mc2.metric("Std Dev", f"{np.std(gray):.1f}")
+                    mc3.metric("Min", f"{np.min(gray)}")
+                    mc4.metric("Max", f"{np.max(gray)}")
+
+                elif hist_mode == "So sánh hiệu quả các phép biến đổi":
+                    with st.spinner("Đang xử lý..."):
+                        demo = img_processor.demonstrate_histogram_effects(img_bgr)
+                    st.markdown("##### Ảnh sau biến đổi và Histogram tương ứng:")
+                    cols = st.columns(4)
+                    for i, (name, img_out) in enumerate(demo.items()):
+                        with cols[i % 4]:
+                            if len(img_out.shape) == 2:
+                                st.image(img_out, caption=name, use_container_width=True, clamp=True)
+                            else:
+                                st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), caption=name, use_container_width=True)
+
+                elif hist_mode == "So sánh Histogram 2 ảnh":
+                    hist_uploaded2 = st.file_uploader(
+                        "Tải ảnh thứ 2 để so sánh:",
+                        type=["jpg", "png", "jpeg", "webp"],
+                        key="hist_upload2"
+                    )
+                    if hist_uploaded2 is not None:
+                        img_pil2 = Image.open(hist_uploaded2)
+                        img_np2 = np.array(img_pil2)
+                        if len(img_np2.shape) == 3 and img_np2.shape[2] == 3:
+                            img_bgr2 = cv2.cvtColor(img_np2, cv2.COLOR_RGB2BGR)
+                        elif len(img_np2.shape) == 3 and img_np2.shape[2] == 4:
+                            img_bgr2 = cv2.cvtColor(img_np2, cv2.COLOR_RGBA2BGR)
+                        else:
+                            img_bgr2 = img_np2
+
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh 1", use_container_width=True)
+                            hist1_img = img_processor.draw_histogram_image(img_bgr, draw_cdf=False)
+                            st.image(cv2.cvtColor(hist1_img, cv2.COLOR_BGR2RGB), caption="Histogram Ảnh 1", use_container_width=True)
+                        with c2:
+                            st.image(cv2.cvtColor(img_bgr2, cv2.COLOR_BGR2RGB), caption="Ảnh 2", use_container_width=True)
+                            hist2_img = img_processor.draw_histogram_image(img_bgr2, draw_cdf=False)
+                            st.image(cv2.cvtColor(hist2_img, cv2.COLOR_BGR2RGB), caption="Histogram Ảnh 2", use_container_width=True)
+
+                        # Kết quả so sánh
+                        comparison = img_processor.compare_histograms(img_bgr, img_bgr2)
+                        st.markdown("##### Kết quả so sánh Histogram:")
+                        cmp_df = pd.DataFrame([
+                            {"Phương pháp": k, "Giá trị": v,
+                             "Ý nghĩa": "Giống" if (k == "correlation" and v > 0.7) or (k == "bhattacharyya" and v < 0.3) or (k == "chi_square" and v < 100) else "Khác biệt"}
+                            for k, v in comparison.items()
+                        ])
+                        st.dataframe(cmp_df, hide_index=True, use_container_width=True)
+
+        # ----- SUB TAB 8: PHÁT HIỆN BIÊN NÂNG CAO -----
+        with cv_sub_tab8:
+            st.markdown("#### 🔬 Các Phương pháp Phát hiện Biên Nâng cao")
+            st.info(
+                "So sánh các toán tử: **Prewitt**, **Roberts Cross**, **Scharr**, "
+                "**Laplacian of Gaussian (LoG)**, **Auto Canny**, **Zero-Crossing**."
+            )
+
+            adv_edge_uploaded = st.file_uploader(
+                "Tải ảnh để so sánh các phương pháp biên:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="adv_edge_upload"
+            )
+
+            if adv_edge_uploaded is not None:
+                img_pil = Image.open(adv_edge_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_bgr = img_np
+
+                adv_edge_mode = st.selectbox("Chế độ:", [
+                    "So sánh tất cả phương pháp",
+                    "Prewitt (chi tiết X/Y)",
+                    "Roberts Cross (chi tiết)",
+                    "Scharr (chi tiết X/Y)",
+                    "LoG — Laplacian of Gaussian",
+                    "Auto Canny (tự động ngưỡng)",
+                    "Zero-Crossing",
+                ], key="adv_edge_mode")
+
+                if adv_edge_mode == "So sánh tất cả phương pháp":
+                    with st.spinner("Đang tính toán tất cả phương pháp biên..."):
+                        edge_results = img_processor.compare_edge_methods(img_bgr)
+                    st.markdown("##### Kết quả so sánh:")
+                    cols = st.columns(3)
+                    for i, (name, img_out) in enumerate(edge_results.items()):
+                        with cols[i % 3]:
+                            st.image(img_out, caption=name, use_container_width=True, clamp=True)
+
+                elif adv_edge_mode == "Prewitt (chi tiết X/Y)":
+                    result = img_processor.detect_edges_prewitt(img_bgr)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.image(result["prewitt_x"], caption="Prewitt X (cạnh dọc)", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["prewitt_y"], caption="Prewitt Y (cạnh ngang)", use_container_width=True, clamp=True)
+                    with c3:
+                        st.image(result["magnitude"], caption="Prewitt Magnitude", use_container_width=True, clamp=True)
+                    st.markdown("**Prewitt** dùng kernel 3×3 với trọng số đều. Đơn giản hơn Sobel nhưng nhạy nhiễu hơn.")
+
+                elif adv_edge_mode == "Roberts Cross (chi tiết)":
+                    result = img_processor.detect_edges_roberts(img_bgr)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.image(result["roberts_cross_1"], caption="Roberts Kernel 1", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["roberts_cross_2"], caption="Roberts Kernel 2", use_container_width=True, clamp=True)
+                    with c3:
+                        st.image(result["magnitude"], caption="Roberts Magnitude", use_container_width=True, clamp=True)
+                    st.markdown("**Roberts Cross** dùng kernel 2×2 — toán tử biên đơn giản nhất, phát hiện tốt cạnh chéo.")
+
+                elif adv_edge_mode == "Scharr (chi tiết X/Y)":
+                    result = img_processor.detect_edges_scharr(img_bgr)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.image(result["scharr_x"], caption="Scharr X", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["scharr_y"], caption="Scharr Y", use_container_width=True, clamp=True)
+                    with c3:
+                        st.image(result["magnitude"], caption="Scharr Magnitude", use_container_width=True, clamp=True)
+                    st.markdown("**Scharr** cho xấp xỉ gradient chính xác hơn Sobel 3×3, đặc biệt với cạnh nghiêng.")
+
+                elif adv_edge_mode == "LoG — Laplacian of Gaussian":
+                    log_sigma = st.slider("Sigma (σ):", 0.5, 5.0, 1.4, 0.1, key="log_sigma")
+                    result = img_processor.detect_edges_log(img_bgr, sigma=log_sigma)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(result, caption=f"LoG (σ={log_sigma})", use_container_width=True, clamp=True)
+                    st.markdown("**LoG** kết hợp Gaussian Blur + Laplacian. σ lớn → cạnh thô, σ nhỏ → cạnh mịn.")
+
+                elif adv_edge_mode == "Auto Canny (tự động ngưỡng)":
+                    ac_sigma = st.slider("Sigma (điều chỉnh ngưỡng):", 0.1, 0.8, 0.33, 0.01, key="ac_sigma")
+                    auto_canny = img_processor.detect_edges_auto_canny(img_bgr, sigma=ac_sigma)
+                    manual_canny = img_processor.detect_edges_canny(img_bgr, 50, 150)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(manual_canny, caption="Canny thủ công (50,150)", use_container_width=True, clamp=True)
+                    with c3:
+                        st.image(auto_canny, caption=f"Auto Canny (σ={ac_sigma})", use_container_width=True, clamp=True)
+                    gray_tmp = img_processor.convert_grayscale(img_bgr)
+                    v = int(np.median(gray_tmp))
+                    st.markdown(f"**Median intensity** = {v} → Low = {int(max(0,(1-ac_sigma)*v))}, High = {int(min(255,(1+ac_sigma)*v))}")
+
+                elif adv_edge_mode == "Zero-Crossing":
+                    zc_sigma = st.slider("Sigma LoG:", 0.5, 5.0, 1.5, 0.1, key="zc_sigma")
+                    st.warning("⚠️ Zero-Crossing có thể mất vài giây trên ảnh lớn (tính pixel-by-pixel).")
+                    with st.spinner("Đang tính Zero-Crossing..."):
+                        result = img_processor.detect_edges_zero_crossing(img_bgr, sigma=zc_sigma)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(result, caption=f"Zero-Crossing (σ={zc_sigma})", use_container_width=True, clamp=True)
+
+        # ----- SUB TAB 9: PHÂN VÙNG ẢNH -----
+        with cv_sub_tab9:
+            st.markdown("#### 🧩 Phân vùng Ảnh (Image Segmentation)")
+            st.info(
+                "Các phương pháp: **Otsu**, **Adaptive Threshold**, **Multi-level Threshold**, "
+                "**Watershed**, **K-Means**, **GrabCut**, **Mean Shift**, **Region Growing**."
+            )
+
+            seg_uploaded = st.file_uploader(
+                "Tải ảnh để phân vùng:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="seg_upload"
+            )
+
+            if seg_uploaded is not None:
+                img_pil = Image.open(seg_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_bgr = img_np
+
+                seg_method = st.selectbox("Chọn phương pháp phân vùng:", [
+                    "So sánh tất cả",
+                    "Otsu Thresholding",
+                    "Adaptive Threshold",
+                    "Multi-level Threshold",
+                    "Watershed",
+                    "K-Means Color",
+                    "GrabCut",
+                    "Mean Shift",
+                    "Region Growing",
+                ], key="seg_method")
+
+                if seg_method == "So sánh tất cả":
+                    with st.spinner("Đang xử lý tất cả phương pháp phân vùng..."):
+                        demo = img_processor.demonstrate_segmentation_methods(img_bgr)
+                    cols = st.columns(4)
+                    for i, (name, img_out) in enumerate(demo.items()):
+                        with cols[i % 4]:
+                            if len(img_out.shape) == 2:
+                                st.image(img_out, caption=name, use_container_width=True, clamp=True)
+                            else:
+                                st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), caption=name, use_container_width=True)
+
+                elif seg_method == "Otsu Thresholding":
+                    result = img_processor.segment_otsu(img_bgr)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.image(result["grayscale"], caption="Grayscale", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["otsu_binary"], caption=f"Otsu Binary (T={result['threshold_value']:.0f})", use_container_width=True, clamp=True)
+                    with c3:
+                        st.image(result["otsu_binary_inv"], caption="Otsu Inverse", use_container_width=True, clamp=True)
+                    st.markdown(f"**Ngưỡng tối ưu tìm được:** T* = {result['threshold_value']:.0f} (tối đa hóa phương sai liên lớp)")
+
+                elif seg_method == "Adaptive Threshold":
+                    at_method = st.selectbox("Phương pháp:", ["gaussian", "mean"], key="at_method")
+                    at_block = st.slider("Block size:", 3, 31, 11, 2, key="at_block")
+                    at_c = st.slider("Hằng số C:", -10, 20, 2, 1, key="at_c")
+                    result = img_processor.segment_adaptive_threshold(img_bgr, at_method, at_block, at_c)
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        st.image(result["grayscale"], caption="Grayscale", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["adaptive_binary"], caption="Adaptive Binary", use_container_width=True, clamp=True)
+                    with c3:
+                        st.image(result["adaptive_binary_inv"], caption="Adaptive Inverse", use_container_width=True, clamp=True)
+
+                elif seg_method == "Multi-level Threshold":
+                    n_levels = st.slider("Số mức ngưỡng:", 1, 5, 2, 1, key="mt_levels")
+                    thresholds = [int(255 * (i + 1) / (n_levels + 1)) for i in range(n_levels)]
+                    st.write(f"Các ngưỡng: {thresholds}")
+                    result = img_processor.segment_multi_threshold(img_bgr, thresholds)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(result["multi_threshold"], caption=f"Multi-Threshold ({n_levels} mức)", use_container_width=True, clamp=True)
+
+                elif seg_method == "Watershed":
+                    with st.spinner("Đang xử lý Watershed..."):
+                        result = img_processor.segment_watershed(img_bgr)
+                    st.markdown("##### Các bước Watershed:")
+                    cols = st.columns(3)
+                    ws_items = [("binary_otsu", "Otsu Binary"), ("distance_transform", "Distance Transform"),
+                                ("sure_foreground", "Sure Foreground"), ("sure_background", "Sure Background"),
+                                ("watershed_boundaries", "Watershed Boundaries"), ("colored_segments", "Colored Segments")]
+                    for i, (key, label) in enumerate(ws_items):
+                        with cols[i % 3]:
+                            img_out = result[key]
+                            if len(img_out.shape) == 2:
+                                st.image(img_out, caption=label, use_container_width=True, clamp=True)
+                            else:
+                                st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), caption=label, use_container_width=True)
+
+                elif seg_method == "K-Means Color":
+                    if len(img_bgr.shape) == 3:
+                        km_k = st.slider("Số cụm K:", 2, 10, 4, 1, key="km_k")
+                        with st.spinner(f"Đang chạy K-Means (K={km_k})..."):
+                            result = img_processor.segment_kmeans_color(img_bgr, k=km_k)
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                        with c2:
+                            st.image(cv2.cvtColor(result["segmented"], cv2.COLOR_BGR2RGB), caption=f"K-Means (K={km_k})", use_container_width=True)
+                        with c3:
+                            st.image(result["label_map"], caption="Label Map", use_container_width=True, clamp=True)
+
+                        with st.expander("Xem mask từng cụm"):
+                            mask_cols = st.columns(min(km_k, 4))
+                            for i, (cname, cmask) in enumerate(result["cluster_masks"].items()):
+                                with mask_cols[i % min(km_k, 4)]:
+                                    st.image(cmask, caption=cname, use_container_width=True, clamp=True)
+                    else:
+                        st.warning("K-Means Color chỉ áp dụng cho ảnh màu.")
+
+                elif seg_method == "GrabCut":
+                    if len(img_bgr.shape) == 3:
+                        gc_iter = st.slider("Số iteration:", 1, 15, 5, 1, key="gc_iter")
+                        with st.spinner("Đang chạy GrabCut..."):
+                            result = img_processor.segment_grabcut(img_bgr, iterations=gc_iter)
+                        c1, c2, c3 = st.columns(3)
+                        with c1:
+                            st.image(cv2.cvtColor(result["roi_visualization"], cv2.COLOR_BGR2RGB), caption="ROI (vùng khởi tạo)", use_container_width=True)
+                        with c2:
+                            st.image(result["foreground_mask"], caption="Foreground Mask", use_container_width=True, clamp=True)
+                        with c3:
+                            st.image(cv2.cvtColor(result["result"], cv2.COLOR_BGR2RGB), caption="GrabCut Result", use_container_width=True)
+                    else:
+                        st.warning("GrabCut chỉ áp dụng cho ảnh màu.")
+
+                elif seg_method == "Mean Shift":
+                    if len(img_bgr.shape) == 3:
+                        ms_sp = st.slider("Spatial radius:", 5, 50, 20, 5, key="ms_sp")
+                        ms_sr = st.slider("Color radius:", 10, 100, 40, 5, key="ms_sr")
+                        with st.spinner("Đang chạy Mean Shift..."):
+                            result = img_processor.segment_mean_shift(img_bgr, sp=ms_sp, sr=ms_sr)
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                        with c2:
+                            st.image(cv2.cvtColor(result, cv2.COLOR_BGR2RGB), caption=f"Mean Shift (sp={ms_sp}, sr={ms_sr})", use_container_width=True)
+                    else:
+                        st.warning("Mean Shift chỉ áp dụng cho ảnh màu.")
+
+                elif seg_method == "Region Growing":
+                    h_img, w_img = img_bgr.shape[:2]
+                    rg_y = st.slider("Seed Y (hàng):", 0, h_img - 1, h_img // 2, 1, key="rg_y")
+                    rg_x = st.slider("Seed X (cột):", 0, w_img - 1, w_img // 2, 1, key="rg_x")
+                    rg_thresh = st.slider("Threshold:", 1, 50, 15, 1, key="rg_thresh")
+                    with st.spinner("Đang chạy Region Growing..."):
+                        mask_rg = img_processor.segment_region_growing(img_bgr, (rg_y, rg_x), rg_thresh)
+                    c1, c2 = st.columns(2)
+                    img_seed = img_bgr.copy()
+                    cv2.circle(img_seed, (rg_x, rg_y), 6, (0, 0, 255), -1)
+                    cv2.putText(img_seed, "Seed", (rg_x + 10, rg_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                    with c1:
+                        st.image(cv2.cvtColor(img_seed, cv2.COLOR_BGR2RGB), caption="Ảnh gốc + Seed", use_container_width=True)
+                    with c2:
+                        st.image(mask_rg, caption=f"Region Growing (T={rg_thresh})", use_container_width=True, clamp=True)
+                    n_pixels = np.sum(mask_rg > 0)
+                    st.markdown(f"**Vùng phát triển:** {n_pixels:,} pixels ({n_pixels / (h_img * w_img) * 100:.1f}% ảnh)")
+
+        # ----- SUB TAB 10: NÉN DỮ LIỆU ẢNH -----
+        with cv_sub_tab10:
+            st.markdown("#### 📦 Nén Dữ liệu Ảnh (Image Compression)")
+            st.info(
+                "Các phương pháp: **JPEG** (lossy), **PNG** (lossless), "
+                "**DCT** (giáo dục), **SVD** (phân tích giá trị kỳ dị), **RLE** (mã hóa chiều dài chạy)."
+            )
+
+            compress_uploaded = st.file_uploader(
+                "Tải ảnh để nén:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="compress_upload"
+            )
+
+            if compress_uploaded is not None:
+                img_pil = Image.open(compress_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_bgr = img_np
+
+                compress_method = st.selectbox("Chọn phương pháp nén:", [
+                    "JPEG (Lossy)",
+                    "PNG (Lossless)",
+                    "DCT — Giáo dục (Discrete Cosine Transform)",
+                    "SVD (Singular Value Decomposition)",
+                    "RLE (Run-Length Encoding)",
+                    "So sánh tất cả",
+                ], key="compress_method")
+
+                if compress_method == "JPEG (Lossy)":
+                    jpeg_q = st.slider("Chất lượng JPEG (1-100):", 1, 100, 50, 1, key="jpeg_q")
+                    result = img_processor.compress_jpeg(img_bgr, quality=jpeg_q)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc", use_container_width=True)
+                    with c2:
+                        st.image(cv2.cvtColor(result["compressed_image"], cv2.COLOR_BGR2RGB), caption=f"JPEG Q={jpeg_q}", use_container_width=True)
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    mc1.metric("Tỷ lệ nén", f"{result['compression_ratio']}x")
+                    mc2.metric("PSNR", f"{result['psnr_db']} dB")
+                    mc3.metric("MSE", f"{result['mse']:.2f}")
+                    mc4.metric("Kích thước nén", f"{result['compressed_size_bytes']:,} bytes")
+
+                elif compress_method == "PNG (Lossless)":
+                    png_level = st.slider("Mức nén PNG (0-9):", 0, 9, 3, 1, key="png_level")
+                    result = img_processor.compress_png(img_bgr, compression_level=png_level)
+                    st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc (không thay đổi — lossless)", use_container_width=True)
+                    mc1, mc2, mc3 = st.columns(3)
+                    mc1.metric("Tỷ lệ nén", f"{result['compression_ratio']}x")
+                    mc2.metric("Kích thước gốc", f"{result['original_size_bytes']:,} bytes")
+                    mc3.metric("Kích thước nén", f"{result['compressed_size_bytes']:,} bytes")
+                    st.success("PNG là nén **không tổn hao** → PSNR = ∞, MSE = 0")
+
+                elif compress_method == "DCT — Giáo dục (Discrete Cosine Transform)":
+                    dct_qf = st.slider("Quality Factor (1-100):", 1, 100, 50, 1, key="dct_qf")
+                    with st.spinner("Đang xử lý DCT block 8×8..."):
+                        result = img_processor.compress_dct_educational(img_bgr, quality_factor=dct_qf)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(result["original_gray"], caption="Ảnh xám gốc", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["compressed_result"], caption=f"DCT QF={dct_qf}", use_container_width=True, clamp=True)
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        st.image(result["dct_coefficients"], caption="Hệ số DCT (log scale)", use_container_width=True, clamp=True)
+                    with c4:
+                        st.image(result["error_map"], caption="Error Map |Original - Compressed|", use_container_width=True, clamp=True)
+                    st.markdown(f"""**Giải thích:** Quality Factor = {dct_qf}.
+                    {'Nén mạnh → nhiều artifact block, mất chi tiết' if dct_qf < 30 else 'Cân bằng chất lượng/nén' if dct_qf < 70 else 'Nén nhẹ → giữ gần như toàn bộ chi tiết'}.""")
+
+                elif compress_method == "SVD (Singular Value Decomposition)":
+                    gray = img_processor.convert_grayscale(img_bgr)
+                    max_k = min(gray.shape)
+                    svd_k = st.slider("Số singular values (k):", 1, min(max_k, 200), 50, 1, key="svd_k")
+                    with st.spinner(f"Đang phân tích SVD (k={svd_k})..."):
+                        result = img_processor.compress_svd(img_bgr, k=svd_k)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(result["original_gray"], caption="Ảnh xám gốc", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["compressed_result"], caption=f"SVD k={svd_k}", use_container_width=True, clamp=True)
+                    c3, c4 = st.columns(2)
+                    with c3:
+                        st.image(result["error_map"], caption="Error Map", use_container_width=True, clamp=True)
+                    with c4:
+                        sv_plot = result["singular_values_plot"]
+                        st.image(cv2.cvtColor(sv_plot, cv2.COLOR_BGR2RGB), caption="Singular Values", use_container_width=True)
+                    mc1, mc2, mc3 = st.columns(3)
+                    mc1.metric("Tỷ lệ nén", f"{result['compression_ratio']}x")
+                    mc2.metric("PSNR", f"{result['psnr_db']} dB")
+                    mc3.metric("MSE", f"{result['mse']:.2f}")
+
+                elif compress_method == "RLE (Run-Length Encoding)":
+                    result = img_processor.compress_rle(img_bgr)
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.image(result["original_gray"], caption="Ảnh xám gốc", use_container_width=True, clamp=True)
+                    with c2:
+                        st.image(result["decoded_image"], caption="Giải nén RLE (lossless)", use_container_width=True, clamp=True)
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    mc1.metric("Tỷ lệ nén", f"{result['compression_ratio']}x")
+                    mc2.metric("Số runs", f"{result['num_runs']:,}")
+                    mc3.metric("Kích thước gốc", f"{result['original_size_bytes']:,} B")
+                    mc4.metric("Kích thước nén", f"{result['compressed_size_bytes']:,} B")
+                    st.info(f"**Lossless:** {result['is_lossless']} — RLE hiệu quả khi ảnh có nhiều vùng đồng nhất.")
+
+                elif compress_method == "So sánh tất cả":
+                    with st.spinner("Đang chạy so sánh tất cả phương pháp nén..."):
+                        all_results = img_processor.analyze_compression_methods(img_bgr)
+                    table_data = []
+                    for name, info in all_results.items():
+                        table_data.append({
+                            "Phương pháp": name,
+                            "Loại nén": info["type"],
+                            "Tỷ lệ nén": str(info["compression_ratio"]),
+                            "PSNR (dB)": f"{info['psnr_db']:.1f}" if info['psnr_db'] != float('inf') else "∞",
+                            "MSE": f"{info['mse']:.2f}",
+                        })
+                    st.markdown("##### Bảng so sánh các phương pháp nén:")
+                    st.dataframe(pd.DataFrame(table_data), hide_index=True, use_container_width=True)
+
+                    st.markdown("##### Ảnh JPEG ở các mức chất lượng:")
+                    jpeg_cols = st.columns(5)
+                    for i, q in enumerate([10, 30, 50, 70, 90]):
+                        key_name = f"JPEG (Q={q})"
+                        if key_name in all_results:
+                            with jpeg_cols[i]:
+                                comp_img = all_results[key_name]["compressed_image"]
+                                if len(comp_img.shape) == 2:
+                                    st.image(comp_img, caption=key_name, use_container_width=True, clamp=True)
+                                else:
+                                    st.image(cv2.cvtColor(comp_img, cv2.COLOR_BGR2RGB), caption=key_name, use_container_width=True)
+
+
+
     # ----------------------------------------------------
     # TAB 4: ĐÁNH GIÁ & LỊCH SỬ HUẤN LUYỆN
     # ----------------------------------------------------
@@ -856,6 +1502,7 @@ Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt
                 index=len(available_runs) - 1,
                 format_func=lambda x: f"🧪 {x}"
             )
+            assert selected_run is not None
             selected_run_dir = os.path.join(runs_base, selected_run)
             df_results = load_training_results(selected_run_dir)
 
