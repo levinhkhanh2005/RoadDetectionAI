@@ -69,23 +69,25 @@ def run_tests():
     res_count = counter.update(fake_track_frame2)
     assert counter.counts["car"] == 1, f"Lỗi đếm xe: kết quả mong đợi 1, thực tế {counter.counts['car']}"
     assert counter.get_total_count() == 1, "Tổng số xe đếm được không khớp!"
-    print(f"=> Kiểm thử đếm xe cắt vạch thành công! Tổng xe đếm được: {counter.get_total_count()}")
+    assert len(counter.events_log) == 1, "Log sự kiện đếm xe chưa được ghi nhận!"
+    test_csv_path = "data/output/test_traffic_log.csv"
+    assert counter.export_csv(test_csv_path), "Xuất CSV thất bại!"
+    assert os.path.exists(test_csv_path), "File CSV không tồn tại sau khi xuất!"
+    print(f"=> Kiểm thử đếm xe và xuất log CSV thành công! Tổng xe: {counter.get_total_count()}")
 
     # 4. Kiem tra Visualizer & Xuat file ket qua
     print("\n[BƯỚC 4] Vẽ Bounding Box, vạch đếm, Dashboard HUD và lưu ảnh...")
     visualizer = Visualizer()
     out_img = visualizer.draw_detections(img, detections, VEHICLE_COLORS)
     out_img = visualizer.draw_counting_line(out_img, counter.line_coords)
+    out_img = visualizer.draw_polygon_roi(out_img, [(50, line_y - 40), (250, line_y - 40), (250, line_y + 40), (50, line_y + 40)])
+    out_img = visualizer.draw_heatmap(out_img, counter.tracks_history)
     out_img = visualizer.draw_dashboard_hud(out_img, counts, len(detections), fps=30.0)
     
     os.makedirs("data/output", exist_ok=True)
     out_path = "data/output/test_result.jpg"
     cv2.imwrite(out_path, out_img)
     print(f"=> Đã lưu ảnh kết quả trực quan hóa tại: {out_path}")
-
-    # Đồng thời sao chép ra artifact để hiển thị trong báo cáo
-    artifact_img_path = r"C:\Users\kle45\.gemini\antigravity-ide\brain\f407a859-09ef-4899-b3a8-30768dca56ac\test_result.jpg"
-    cv2.imwrite(artifact_img_path, out_img)
 
     print("\n=== TOÀN BỘ CÁC BƯỚC KIỂM THỬ ĐÃ HOÀN THÀNH XUẤT SẮC! ===")
 

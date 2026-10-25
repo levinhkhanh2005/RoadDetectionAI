@@ -16,6 +16,22 @@ Hệ thống giải quyết bài toán thị giác máy tính trong hệ thống
 - **Giao diện Demo trực quan**:
   - Giao diện OpenCV thời gian thực (CLI / Webcam / Video).
   - Giao diện Web tương tác hiện đại bằng **Streamlit** phục vụ thuyết trình và chấm điểm đồ án.
+- **Xuất dữ liệu thống kê (Data Logging)**: Tự động ghi nhận mốc thời gian (timestamp), ID xe, phân loại phương tiện và hướng di chuyển ra file CSV phục vụ phân tích báo cáo.
+
+---
+
+## 🏗️ Kiến trúc hệ thống (System Architecture)
+
+```mermaid
+graph LR
+    A["Nguồn vào<br/>(Camera / Video / Ảnh)"] --> B["VehicleDetector<br/>(YOLOv8 Detection)"]
+    B --> C["ByteTrack<br/>(Object Tracking)"]
+    C --> D["VehicleCounter<br/>(Line Crossing & Logging)"]
+    D --> E["Visualizer<br/>(HUD, Trajectory, Boxes)"]
+    E --> F["OpenCV GUI / Video File"]
+    E --> G["Streamlit Web Dashboard"]
+    D --> H["File log CSV<br/>(data/output/*.csv)"]
+```
 
 ---
 
@@ -31,10 +47,13 @@ RoadDetectionAI/
 ├── src/
 │   ├── __init__.py             # Khởi tạo package
 │   ├── detector.py             # Lớp VehicleDetector: nạp model, lọc class phương tiện
-│   ├── tracker.py              # Lớp VehicleCounter: theo dõi quỹ đạo, thuật toán cắt vạch
-│   └── visualizer.py           # Lớp Visualizer: vẽ HUD, Bounding box, vạch đếm, quỹ đạo
+│   ├── tracker.py              # Lớp VehicleCounter: theo dõi quỹ đạo, thuật toán cắt vạch & vùng ROI
+│   └── visualizer.py           # Lớp Visualizer: vẽ HUD, Bounding box, vạch đếm, Heatmap, ROI
+├── tests/
+│   └── test_unit.py            # Bộ Unit Test (chạy nhanh không cần GPU)
 ├── app_streamlit.py            # Giao diện Web tương tác Dashboard Streamlit
 ├── main.py                     # File thực thi dòng lệnh / OpenCV Window
+├── test_system.py              # Kịch bản kiểm thử tích hợp toàn diện hệ thống
 ├── requirements.txt            # Danh sách thư viện phụ thuộc
 └── README.md                   # Tài liệu hướng dẫn & Đề cương báo cáo
 ```
@@ -72,7 +91,7 @@ Trình duyệt sẽ tự động mở trang web dashboard tại địa chỉ `ht
   ```powershell
   python main.py --source data/samples/traffic.mp4
   ```
-- **Nhận diện trên Video và Lưu file kết quả xuất ra:**
+- **Nhận diện trên Video và Lưu video + log CSV ra thư mục data/output/:**
   ```powershell
   python main.py --source data/samples/traffic.mp4 --save
   ```
@@ -84,8 +103,33 @@ Trình duyệt sẽ tự động mở trang web dashboard tại địa chỉ `ht
 ### ⌨️ Các phím tắt khi chạy trên OpenCV:
 - `q` hoặc `ESC`: Thoát chương trình.
 - `p`: Tạm dừng (Pause) / Tiếp tục video.
+- `h`: Bật / Tắt bản đồ nhiệt mật độ giao thông (**Heatmap**).
 - `s`: Chụp ảnh màn hình (Snapshot) và lưu vào thư mục `data/output/`.
 - `r`: Khởi tạo lại (Reset) bộ đếm xe về 0.
+
+### 4. Kiểm thử phần mềm (Testing)
+- **Chạy bộ Unit Test tự động (Không cần GPU, chạy < 0.2s):**
+  ```powershell
+  python -m unittest discover tests
+  ```
+- **Chạy kiểm thử tích hợp toàn hệ thống (End-to-End Smoke Test):**
+  ```powershell
+  python test_system.py
+  ```
+
+---
+
+## 📊 Kết quả thực nghiệm & Benchmark mô hình (Model Performance)
+
+Dữ liệu benchmark được trích xuất từ các lần huấn luyện thực tế trong `runs/detect/`:
+
+| Thứ hạng | Mô hình | Kích thước | Epoch | Precision | Recall | mAP@50 | mAP@50-95 | Tốc độ / Thiết bị |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **1 (Tốt nhất)** | **traffic_model-2 (YOLOv8n)** | 6.5 MB | 30 | **82.5%** | **82.3%** | **88.9%** | **68.4%** | ~45 FPS (CUDA GPU) |
+| 2 | traffic_model_v2 (YOLOv8s) | 22.6 MB | 3 | 83.6% | 67.0% | 75.0% | 51.4% | ~25 FPS (CUDA GPU) |
+| 3 | traffic_model (YOLOv8n) | 6.5 MB | 1 | 79.5% | 60.0% | 67.5% | 47.0% | ~45 FPS (CUDA GPU) |
+
+> **Nhận xét chuyên môn cho đồ án:** Mô hình **YOLOv8n (traffic_model-2)** sau khi fine-tune 30 epochs đạt độ chính xác cân bằng cao nhất (**mAP@50 đạt 88.9%**), kích thước nhỏ gọn (6.5 MB) và tốc độ xử lý đáp ứng hoàn hảo yêu cầu thời gian thực (real-time) trên hệ thống camera giám sát thông minh.
 
 ---
 - Link tải dataset mẫu: https://drive.google.com/drive/folders/1u2a9F1EqX_Y2ljNr-AsNs9XWLy5n0p1Z?hl=vi
