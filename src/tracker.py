@@ -6,6 +6,10 @@ xử lý thuật toán cắt vạch ảo (Line Crossing) để đếm số lư�
 
 from typing import List, Dict, Tuple, Set, Any, Optional
 from collections import defaultdict
+import time
+import csv
+import os
+import cv2
 import numpy as np
 
 
@@ -28,12 +32,15 @@ class VehicleCounter:
     Bộ đếm phương tiện thông minh qua vạch kiểm soát ảo.
     """
 
-    def __init__(self, line_coords: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None):
+    def __init__(self, line_coords: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None,
+                 polygon_coords: Optional[List[Tuple[int, int]]] = None):
         """
         Khởi tạo bộ đếm.
         :param line_coords: Tọa độ vạch đếm ((x1, y1), (x2, y2)).
+        :param polygon_coords: Tọa độ đa giác vùng kiểm soát [(x, y), ...].
         """
         self.line_coords = line_coords  # ((x1, y1), (x2, y2))
+        self.polygon_coords = polygon_coords  # [(x, y), ...]
         
         # Lưu vết tâm của các đối tượng: {track_id: [(cx, cy), ...]}
         self.tracks_history: Dict[int, List[Tuple[int, int]]] = defaultdict(list)
@@ -55,10 +62,16 @@ class VehicleCounter:
         
         # Lịch sử sự kiện gần nhất để hiển thị thông báo
         self.recent_events: List[Dict[str, Any]] = []
+        # Toàn bộ lịch sử các sự kiện cắt vạch để xuất báo cáo CSV
+        self.events_log: List[Dict[str, Any]] = []
 
     def set_line(self, pt1: Tuple[int, int], pt2: Tuple[int, int]):
         """Cập nhật tọa độ vạch kiểm soát ảo."""
         self.line_coords = (pt1, pt2)
+
+    def set_polygon(self, pts: List[Tuple[int, int]]):
+        """Cập nhật tọa độ vùng đa giác kiểm soát ROI."""
+        self.polygon_coords = pts
 
     def reset(self):
         """Khởi tạo lại toàn bộ bộ đếm và lịch sử."""
@@ -68,12 +81,13 @@ class VehicleCounter:
             self.counts[k] = 0
         self.direction_counts = {"in": 0, "out": 0}
         self.recent_events.clear()
+        self.events_log.clear()
 
     def get_center(self, bbox: List[int]) -> Tuple[int, int]:
         """Tính điểm tâm đáy của Bounding Box (phù hợp với vị trí bánh xe tiếp đất)."""
         x1, y1, x2, y2 = bbox
         cx = int((x1 + x2) / 2)
-        cy = int((y1 + y2) / 2)
+        cy = y2  # tâm đáy: mép dưới bbox
         return (cx, cy)
 
     def determine_direction(self, pt_prev: Tuple[int, int], pt_curr: Tuple[int, int]) -> str:
@@ -123,37 +137,48 @@ class VehicleCounter:
             if len(self.tracks_history[track_id]) > 30:
                 self.tracks_history[track_id].pop(0)
 
-            # Kiểm tra cắt vạch nếu có vạch đếm và có ít nhất 2 điểm lịch sử
-            if self.line_coords is not None and len(self.tracks_history[track_id]) >= 2:
-                pt_prev = self.tracks_history[track_id][-2]
-                pt_curr = self.tracks_history[track_id][-1]
+            # Kiểm tra cắt vạch hoặc đi vào vùng đa giác ROI
+            has_prev = len(self.tracks_history[track_id]) >= 2
+            pt_prev = self.tracks_history[track_id][-2] if has_prev else center
+            pt_curr = center
+
+            crossed_line = False
+            if self.line_coords is not None and has_prev:
                 (line_a, line_b) = self.line_coords
+                crossed_line = intersect(pt_prev, pt_curr, line_a, line_b)
 
-                # Nếu cắt vạch và chưa từng được đếm
-                if track_id not in self.counted_ids and intersect(pt_prev, pt_curr, line_a, line_b):
-                    self.counted_ids.add(track_id)
-                    direction = self.determine_direction(pt_prev, pt_curr)
+            entered_polygon = False
+            if self.polygon_coords is not None and len(self.polygon_coords) >= 3:
+                poly_np = np.array(self.polygon_coords, dtype=np.int32)
+                entered_polygon = cv2.pointPolygonTest(poly_np, (float(center[0]), float(center[1])), False) >= 0
 
-                    # Tăng biến đếm
-                    if cls_en in self.counts:
-                        self.counts[cls_en] += 1
-                    else:
-                        self.counts[cls_en] = 1
+            # Nếu cắt vạch hoặc vào ROI và chưa từng được đếm
+            if track_id not in self.counted_ids and (crossed_line or entered_polygon):
+                self.counted_ids.add(track_id)
+                direction = self.determine_direction(pt_prev, pt_curr) if crossed_line else "roi"
 
-                    self.direction_counts[direction] = self.direction_counts.get(direction, 0) + 1
-                    current_frame_counts[direction] += 1
+                # Tăng biến đếm
+                if cls_en in self.counts:
+                    self.counts[cls_en] += 1
+                else:
+                    self.counts[cls_en] = 1
 
-                    event_info = {
-                        "track_id": track_id,
-                        "class_en": cls_en,
-                        "class_vi": obj.get("class_vi", "Xe"),
-                        "direction": direction,
-                        "point": center
-                    }
-                    new_crossed_events.append(event_info)
-                    self.recent_events.append(event_info)
-                    if len(self.recent_events) > 10:
-                        self.recent_events.pop(0)
+                self.direction_counts[direction] = self.direction_counts.get(direction, 0) + 1
+                current_frame_counts[direction] = current_frame_counts.get(direction, 0) + 1
+
+                event_info = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "track_id": track_id,
+                    "class_en": cls_en,
+                    "class_vi": obj.get("class_vi", "Xe"),
+                    "direction": direction,
+                    "point": center
+                }
+                new_crossed_events.append(event_info)
+                self.events_log.append(event_info)
+                self.recent_events.append(event_info)
+                if len(self.recent_events) > 10:
+                    self.recent_events.pop(0)
 
         # Xóa bớt lịch sử của những track_id không còn xuất hiện trong hơn 50 frame
         if len(self.tracks_history) > 200:
@@ -173,3 +198,15 @@ class VehicleCounter:
     def get_total_count(self) -> int:
         """Tổng số phương tiện đã đếm qua vạch."""
         return sum(self.counts.values())
+
+    def export_csv(self, filepath: str) -> bool:
+        """Xuất danh sách tất cả các lượt xe qua vạch ra file CSV."""
+        if not self.events_log:
+            return False
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["timestamp", "track_id", "class_en", "class_vi", "direction", "x", "y"])
+            for e in self.events_log:
+                writer.writerow([e["timestamp"], e["track_id"], e["class_en"], e["class_vi"], e["direction"], e["point"][0], e["point"][1]])
+        return True

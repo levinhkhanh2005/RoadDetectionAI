@@ -71,3 +71,12 @@ wandb/
 runs/detect/train/
 runs/detect/train*/
 runs/predict*/
+
+# Bỏ qua kết quả đầu ra khi chạy nhận diện / kiểm thử
+data/output/*
+!data/output/.gitkeep
+
+# Logs & Test caches
+*.log
+.pytest_cache/
+AGENTS.md

@@ -132,14 +132,17 @@ def process_video_or_camera(args):
     print("  - 'q' hoac ESC: Thoat chuong trinh")
     print("  - 'p'         : Tam dung / Tiep tuc")
     print("  - 's'         : Chup anh luu lai snapshot")
+    print("  - 'h'         : Bat / Tat Heatmap mat do giao thong")
     print("  - 'r'         : Reset bo dem xe ve 0")
     print("=" * 50 + "\n")
 
     paused = False
+    show_heatmap = False
     prev_time = time.time()
     fps_calc = 0.0
     frame_count = 0
     disp_frame = None
+    last_raw_frame = None
 
     while cap.isOpened():
         if not paused:
@@ -148,6 +151,7 @@ def process_video_or_camera(args):
                 print("[INFO] Da ket thuc luong video.")
                 break
 
+            last_raw_frame = frame.copy()
             frame_count += 1
 
             # Tinh FPS
@@ -170,6 +174,9 @@ def process_video_or_camera(args):
             disp_frame = visualizer.draw_trajectories(disp_frame, counter.tracks_history)
             # - Ve vach dem xe
             disp_frame = visualizer.draw_counting_line(disp_frame, counter.line_coords)
+            # - Ve Heatmap neu dang bat
+            if show_heatmap:
+                disp_frame = visualizer.draw_heatmap(disp_frame, counter.tracks_history)
             # - Ve bang thong ke HUD
             disp_frame = visualizer.draw_dashboard_hud(
                 disp_frame,
@@ -194,6 +201,9 @@ def process_video_or_camera(args):
             elif key == ord('p'):      # Tam dung / tiep tuc
                 paused = not paused
                 print("[INFO] Tinh trang video: " + ("Tam dung" if paused else "Tiep tuc"))
+            elif key == ord('h'):      # Bat / tat heatmap
+                show_heatmap = not show_heatmap
+                print("[INFO] Che do Heatmap: " + ("Bat" if show_heatmap else "Tat"))
             elif key == ord('r'):      # Reset bo dem
                 counter.reset()
                 print("[INFO] Da reset bo dem xe ve 0.")
@@ -214,6 +224,16 @@ def process_video_or_camera(args):
     for k, v in counter.counts.items():
         print(f"  + {k.capitalize()}: {v}")
     print(f"- Luot vao (In): {counter.direction_counts.get('in', 0)} | Luot ra (Out): {counter.direction_counts.get('out', 0)}")
+    if args.save:
+        base_name = "traffic" if not isinstance(source, str) else os.path.splitext(os.path.basename(source))[0]
+        csv_path = os.path.join("data/output", f"{base_name}_log.csv")
+        if counter.export_csv(csv_path):
+            print(f"[INFO] Da xuat log chi tiet ra file: {csv_path}")
+        if last_raw_frame is not None and counter.tracks_history:
+            heatmap_img = visualizer.draw_heatmap(last_raw_frame, counter.tracks_history)
+            heatmap_path = os.path.join("data/output", f"{base_name}_heatmap.jpg")
+            cv2.imwrite(heatmap_path, heatmap_img)
+            print(f"[INFO] Da luu anh Heatmap tong hop tai: {heatmap_path}")
 
 
 def main():

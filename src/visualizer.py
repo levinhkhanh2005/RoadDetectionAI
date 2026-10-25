@@ -98,7 +98,7 @@ class Visualizer:
     def draw_trajectories(self, frame: np.ndarray, tracks_history: Dict[int, List[Tuple[int, int]]],
                           color: Tuple[int, int, int] = (0, 255, 255)) -> np.ndarray:
         """Vẽ vệt quỹ đạo di chuyển của các xe theo thời gian."""
-        out = frame
+        out = frame  # intentional: mutates in-place for perf, called after draw_detections copies
         for track_id, points in tracks_history.items():
             if len(points) < 2:
                 continue
@@ -114,7 +114,7 @@ class Visualizer:
         """Vẽ vạch đếm ảo qua đường."""
         if line_coords is None:
             return frame
-        out = frame
+        out = frame  # intentional: mutates in-place for perf, called after draw_detections copies
         pt1, pt2 = line_coords
         
         # Vẽ hiệu ứng vạch đếm sáng
@@ -198,4 +198,47 @@ class Visualizer:
             cv2.putText(out, dir_text, (hud_x + 15, curr_y + 35),
                         self.font, 0.4, (180, 180, 180), 1, cv2.LINE_AA)
 
+        return out
+
+    def draw_heatmap(self, frame: np.ndarray, tracks_history: Dict[int, List[Tuple[int, int]]],
+                     alpha: float = 0.45) -> np.ndarray:
+        """Vẽ bản đồ nhiệt mật độ giao thông (Traffic Density Heatmap) từ lịch sử di chuyển."""
+        h, w = frame.shape[:2]
+        heat_mask = np.zeros((h, w), dtype=np.float32)
+        has_points = False
+
+        for points in tracks_history.values():
+            for pt in points:
+                if 0 <= pt[0] < w and 0 <= pt[1] < h:
+                    cv2.circle(heat_mask, pt, radius=18, color=1.0, thickness=-1)
+                    has_points = True
+
+        if not has_points:
+            return frame
+
+        cv2.normalize(heat_mask, heat_mask, 0, 255, cv2.NORM_MINMAX)
+        heat_mask = cv2.GaussianBlur(heat_mask.astype(np.uint8), (41, 41), 0)
+        color_map = cv2.applyColorMap(heat_mask, cv2.COLORMAP_JET)
+
+        mask_threshold = heat_mask > 15
+        out = frame.copy()
+        out[mask_threshold] = cv2.addWeighted(frame, 1.0 - alpha, color_map, alpha, 0)[mask_threshold]
+        return out
+
+    def draw_polygon_roi(self, frame: np.ndarray, polygon_coords: Optional[List[Tuple[int, int]]],
+                         color: Tuple[int, int, int] = (255, 0, 255), label: str = "VUNG ROI") -> np.ndarray:
+        """Vẽ vùng đa giác kiểm soát (Polygon ROI) với hiệu ứng bán trong suốt."""
+        if polygon_coords is None or len(polygon_coords) < 3:
+            return frame
+        out = frame.copy()
+        pts = np.array(polygon_coords, dtype=np.int32).reshape((-1, 1, 2))
+        overlay = out.copy()
+        cv2.fillPoly(overlay, [pts], color)
+        out = cv2.addWeighted(overlay, 0.15, out, 0.85, 0)
+        cv2.polylines(out, [pts], isClosed=True, color=color, thickness=2)
+        for pt in polygon_coords:
+            cv2.circle(out, pt, 4, (0, 255, 255), -1)
+        first_pt = polygon_coords[0]
+        cv2.putText(out, label, (first_pt[0], max(15, first_pt[1] - 8)),
+                    self.font, 0.45, color, 1, cv2.LINE_AA)
         return out
