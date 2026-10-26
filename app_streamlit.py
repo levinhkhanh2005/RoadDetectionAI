@@ -26,28 +26,33 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS cho giao diện hiện đại, chuyên nghiệp
+# Styling cho phần nhận diện thương hiệu; màu sắc và widget dùng theme Streamlit.
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.2rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%);
+    .app-hero {
+        padding: 0.35rem 0 1.1rem;
+    }
+    .app-hero h1 {
+        margin: 0;
+        font-size: clamp(1.7rem, 3vw, 2.45rem);
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+        background: linear-gradient(100deg, #67e8f9 0%, #34d399 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
     }
-    .sub-header {
-        color: #888888;
-        font-size: 1.05rem;
-        margin-bottom: 1.5rem;
+    .app-hero p {
+        margin: 0.45rem 0 0;
+        color: #94a9c2;
+        font-size: 0.98rem;
     }
-    .metric-card {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 15px;
-        text-align: center;
+    .sidebar-label {
+        color: #67e8f9;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin: 0.15rem 0 0.65rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -119,33 +124,39 @@ def load_all_experiments(base_dir: str):
 
 def main():
     # Header
-    st.markdown('<div class="main-header">🚗 HỆ THỐNG NHẬN DIỆN & ĐẾM PHƯƠNG TIỆN ĐƯỜNG BỘ</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Công nghệ: YOLOv8 + ByteTrack + OpenCV + Xử lý Ảnh Cổ điển</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(
+            '<div class="app-hero"><h1>Hệ thống nhận diện & đếm phương tiện đường bộ</h1>'
+            '<p>Giám sát giao thông thời gian thực với YOLOv8, ByteTrack và xử lý ảnh OpenCV.</p></div>',
+            unsafe_allow_html=True,
+        )
 
     # Sidebar điều khiển
     with st.sidebar:
-        st.header("⚙️ Cấu hình mô hình AI")
-        
-        model_choice = st.selectbox(
-            "Chọn mô hình YOLO:",
-            [
-                "best.pt (Fine-tuned, Khuyên dùng ✅)",
-                "yolov8n.pt (Pretrained gốc, Nhanh)",
-                "yolov8s.pt (Pretrained gốc, Chính xác hơn)"
-            ],
-            index=0
-        )
-        model_file = model_choice.split(" ")[0]
+        with st.container(border=True):
+            st.markdown('<div class="sidebar-label">AI model</div>', unsafe_allow_html=True)
+            st.subheader("Cấu hình mô hình")
 
-        conf_thresh = st.slider("Ngưỡng tự tin (Confidence Threshold):", 0.1, 1.0, 0.35, 0.05)
-        iou_thresh = st.slider("Ngưỡng IoU (Non-Max Suppression):", 0.1, 1.0, 0.45, 0.05)
-        
-        st.markdown("---")
-        st.header("📏 Cấu hình vạch đếm xe")
-        line_pos = st.slider("Vị trí vạch kẻ ảo (% chiều cao video):", 10, 90, 65, 5) / 100.0
+            model_choice = st.selectbox(
+                "Chọn mô hình YOLO:",
+                [
+                    "best.pt (Fine-tuned, Khuyên dùng ✅)",
+                    "yolov8n.pt (Pretrained gốc, Nhanh)",
+                    "yolov8s.pt (Pretrained gốc, Chính xác hơn)"
+                ],
+                index=0
+            )
+            model_file = model_choice.split(" ")[0]
 
-        st.markdown("---")
-        st.info("💡 **Các lớp phương tiện hỗ trợ:**\n- Ô tô (Car)\n- Xe máy (Motorcycle)\n- Xe buýt (Bus)\n- Xe tải (Truck)\n- Xe đạp (Bicycle)")
+            conf_thresh = st.slider("Ngưỡng tự tin (Confidence Threshold):", 0.1, 1.0, 0.35, 0.05)
+            iou_thresh = st.slider("Ngưỡng IoU (Non-Max Suppression):", 0.1, 1.0, 0.45, 0.05)
+
+        with st.container(border=True):
+            st.markdown('<div class="sidebar-label">Counting line</div>', unsafe_allow_html=True)
+            st.subheader("Cấu hình vạch đếm")
+            line_pos = st.slider("Vị trí vạch kẻ ảo (% chiều cao video):", 10, 90, 65, 5) / 100.0
+
+        st.info("Các lớp phương tiện hỗ trợ:\n\n- Ô tô (Car)\n- Xe máy (Motorcycle)\n- Xe buýt (Bus)\n- Xe tải (Truck)\n- Xe đạp (Bicycle)")
 
     # Khởi tạo detector
     with st.spinner("Đang tải mô hình AI..."):
@@ -461,7 +472,7 @@ def main():
                    "Đồng thời so sánh trực tiếp với kết quả từ mô hình YOLOv8.")
 
         (cv_sub_tab1, cv_sub_tab2, cv_sub_tab3, cv_sub_tab4, cv_sub_tab5,
-         cv_sub_tab6, cv_sub_tab7, cv_sub_tab8, cv_sub_tab9, cv_sub_tab10) = st.tabs([
+         cv_sub_tab6, cv_sub_tab7, cv_sub_tab8, cv_sub_tab9, cv_sub_tab10, cv_sub_tab11) = st.tabs([
             "🖼️ Pipeline Xử lý Ảnh",
             "🔍 Phát hiện Cạnh",
             "⚙️ Phép Hình thái học",
@@ -471,7 +482,8 @@ def main():
             "📊 Biểu đồ Tần suất",
             "🔬 Biên Nâng cao",
             "🧩 Phân vùng Ảnh",
-            "📦 Nén Dữ liệu Ảnh"
+            "📦 Nén Dữ liệu Ảnh",
+            "📡 Xử lý Ảnh Nhiễu"
         ])
 
         # ----- SUB TAB 1: PIPELINE XỬ LÝ ẢNH TĨNH -----
@@ -1511,6 +1523,217 @@ Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt
                                 else:
                                     st.image(cv2.cvtColor(comp_img, cv2.COLOR_BGR2RGB), caption=key_name, width="stretch")
 
+        # ----- SUB TAB 11: XỬ LÝ ẢNH NHIỄU -----
+        with cv_sub_tab11:
+            st.markdown("#### 📡 Xử lý Ảnh Nhiễu & Khôi phục Ảnh (Image Noise & Restoration)")
+            st.info(
+                "Mô phỏng 5 mô hình nhiễu thực tế (**Gaussian**, **Muối-Tiêu**, **Poisson**, **Speckle**, **Đều**) "
+                "và áp dụng các bộ lọc phục hồi chuyên sâu (**NLM**, **Bilateral**, **Median**, **Gaussian**, **Mean**). "
+                "Đánh giá định lượng hiệu quả lọc bằng chỉ số **PSNR (dB)** và **MSE**."
+            )
+
+            noise_uploaded = st.file_uploader(
+                "Tải ảnh để thử nghiệm xử lý nhiễu:",
+                type=["jpg", "png", "jpeg", "webp"],
+                key="noise_upload"
+            )
+
+            use_sample_noise = False
+            sample_noise_path = "data/samples/traffic.jpg"
+            if noise_uploaded is None and os.path.exists(sample_noise_path):
+                use_sample_noise = st.checkbox("Sử dụng ảnh mẫu giao thông (`data/samples/traffic.jpg`)", value=True, key="noise_use_sample")
+
+            img_bgr = None
+            if noise_uploaded is not None:
+                img_pil = Image.open(noise_uploaded)
+                img_np = np.array(img_pil)
+                if len(img_np.shape) == 3 and img_np.shape[2] == 3:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+                elif len(img_np.shape) == 3 and img_np.shape[2] == 4:
+                    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+                else:
+                    img_bgr = img_np
+            elif use_sample_noise:
+                img_bgr = cv2.imread(sample_noise_path)
+
+            if img_bgr is not None:
+                noise_mode = st.segmented_control(
+                    "Chế độ hiển thị:",
+                    options=["🔬 Thử nghiệm Tương tác", "📊 So sánh Toàn diện (Benchmark)"],
+                    default="🔬 Thử nghiệm Tương tác",
+                    key="noise_mode"
+                )
+
+                if noise_mode == "🔬 Thử nghiệm Tương tác":
+                    col_noise_cfg, col_filter_cfg = st.columns(2)
+                    with col_noise_cfg:
+                        with st.container(border=True):
+                            st.markdown("##### 1. Mô hình hóa & Tạo Nhiễu")
+                            noise_type = st.selectbox(
+                                "Chọn loại nhiễu:",
+                                [
+                                    "Gaussian Noise (Nhiễu chuẩn Gauss)",
+                                    "Salt-and-Pepper Noise (Nhiễu Muối-Tiêu)",
+                                    "Poisson Noise (Nhiễu Poisson / Hạt ánh sáng)",
+                                    "Speckle Noise (Nhiễu Đốm / Nhân tính)",
+                                    "Uniform Noise (Nhiễu Đều)",
+                                ],
+                                key="noise_type_select"
+                            )
+
+                            if noise_type.startswith("Gaussian"):
+                                g_mean = st.slider("Giá trị kỳ vọng (mean μ):", -20.0, 20.0, 0.0, 1.0, key="n_g_mean")
+                                g_sigma = st.slider("Độ lệch chuẩn (sigma σ):", 5.0, 100.0, 25.0, 1.0, key="n_g_sigma")
+                                noisy_img = img_processor.add_gaussian_noise(img_bgr, mean=g_mean, sigma=g_sigma)
+                                noise_desc = f"Nhiễu Gaussian: $I_{{noisy}} = I + \\mathcal{{N}}({g_mean}, {g_sigma}^2)$ — mô phỏng nhiễu cảm biến nhiệt/điện tử."
+
+                            elif noise_type.startswith("Salt-and-Pepper"):
+                                sp_amt = st.slider("Tỷ lệ điểm ảnh bị nhiễu (amount):", 0.01, 0.30, 0.05, 0.01, key="n_sp_amt")
+                                sp_ratio = st.slider("Tỷ lệ Muối (trắng) / Tiêu (đen):", 0.1, 0.9, 0.5, 0.05, key="n_sp_ratio")
+                                noisy_img = img_processor.add_salt_pepper_noise(img_bgr, amount=sp_amt, salt_ratio=sp_ratio)
+                                noise_desc = f"Nhiễu Muối-Tiêu (Impulse): {sp_amt*100:.1f}% pixel bị thay bằng 0 hoặc 255 do lỗi truyền tín hiệu."
+
+                            elif noise_type.startswith("Poisson"):
+                                st.caption("Nhiễu Poisson phụ thuộc vào mức sáng: vùng sáng có phương sai nhiễu lớn hơn theo thống kê photon.")
+                                noisy_img = img_processor.add_poisson_noise(img_bgr)
+                                noise_desc = "Nhiễu Poisson (Shot Noise): Phụ thuộc tín hiệu, phổ biến khi chụp đêm hoặc tốc độ màn trập cao."
+
+                            elif noise_type.startswith("Speckle"):
+                                sk_sigma = st.slider("Độ lệch chuẩn nhiễu nhân (σ):", 0.05, 0.60, 0.20, 0.05, key="n_sk_sigma")
+                                noisy_img = img_processor.add_speckle_noise(img_bgr, sigma=sk_sigma)
+                                noise_desc = f"Nhiễu Speckle: $I_{{noisy}} = I + I \\times \\mathcal{{N}}(0, {sk_sigma}^2)$ — nhiễu nhân trong radar, siêu âm, thời tiết xấu."
+
+                            else:
+                                u_range = st.slider("Biên độ nhiễu đều (±A):", 5.0, 80.0, 30.0, 5.0, key="n_u_range")
+                                noisy_img = img_processor.add_uniform_noise(img_bgr, low=-u_range, high=u_range)
+                                noise_desc = f"Nhiễu Đều: $I_{{noisy}} = I + \\mathcal{{U}}(-{u_range}, +{u_range})$."
+
+                    with col_filter_cfg:
+                        with st.container(border=True):
+                            st.markdown("##### 2. Lựa chọn Bộ lọc Khôi phục")
+                            default_filter_idx = 0
+                            if noise_type.startswith("Salt-and-Pepper"):
+                                default_filter_idx = 1
+                            elif noise_type.startswith("Speckle"):
+                                default_filter_idx = 2
+
+                            denoise_method = st.selectbox(
+                                "Phương pháp lọc khử nhiễu:",
+                                [
+                                    "Non-Local Means (NLM - Chuẩn cao cấp)",
+                                    "Median Filter (Lọc Trung vị - Tối ưu cho Muối-Tiêu)",
+                                    "Bilateral Filter (Lọc Song phương - Bảo toàn cạnh)",
+                                    "Gaussian Blur (Lọc Gauss làm mịn)",
+                                    "Mean Filter (Lọc Trung bình)",
+                                ],
+                                index=default_filter_idx,
+                                key="denoise_method_select"
+                            )
+
+                            if denoise_method.startswith("Non-Local Means"):
+                                dn_h = st.slider("Cường độ làm mịn (h):", 3.0, 30.0, 10.0, 1.0, key="dn_h_slider")
+                                denoised_img = img_processor.apply_denoising(noisy_img, method="nlm", h=dn_h)
+                                filter_name = f"NLM (h={dn_h})"
+                            elif denoise_method.startswith("Median"):
+                                k_med = st.selectbox("Kích thước kernel (ksize):", [3, 5, 7, 9], index=1, key="k_med_select")
+                                denoised_img = img_processor.apply_denoising(noisy_img, method="median", ksize=k_med)
+                                filter_name = f"Median ({k_med}×{k_med})"
+                            elif denoise_method.startswith("Bilateral"):
+                                b_d = st.selectbox("Bán kính láng giềng (d):", [5, 9, 15], index=1, key="b_d_select")
+                                denoised_img = img_processor.apply_bilateral_filter(noisy_img, d=b_d, sigma_color=75, sigma_space=75)
+                                filter_name = f"Bilateral (d={b_d})"
+                            elif denoise_method.startswith("Gaussian"):
+                                k_gauss = st.selectbox("Kích thước kernel (ksize):", [3, 5, 7, 9], index=1, key="k_gauss_select")
+                                denoised_img = img_processor.apply_gaussian_blur(noisy_img, ksize=k_gauss)
+                                filter_name = f"Gaussian Blur ({k_gauss}×{k_gauss})"
+                            else:
+                                k_mean = st.selectbox("Kích thước kernel (ksize):", [3, 5, 7, 9], index=1, key="k_mean_select")
+                                denoised_img = img_processor.apply_denoising(noisy_img, method="mean", ksize=k_mean)
+                                filter_name = f"Mean Filter ({k_mean}×{k_mean})"
+
+                    m_noisy = img_processor.compute_psnr_mse(img_bgr, noisy_img)
+                    m_denoised = img_processor.compute_psnr_mse(img_bgr, denoised_img)
+                    delta_psnr = round(m_denoised["psnr"] - m_noisy["psnr"], 2) if m_noisy["psnr"] != float('inf') and m_denoised["psnr"] != float('inf') else 0.0
+
+                    c_orig, c_noisy, c_clean = st.columns(3)
+                    with c_orig:
+                        st.markdown("**1. Ảnh gốc ban đầu**")
+                        st.image(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB), caption="Ảnh gốc (Ground Truth)", width="stretch")
+                        st.metric("PSNR / MSE chuẩn", "Gốc (Chuẩn)", "0.0 MSE")
+
+                    with c_noisy:
+                        st.markdown("**2. Ảnh sau khi thêm nhiễu**")
+                        st.image(cv2.cvtColor(noisy_img, cv2.COLOR_BGR2RGB), caption=f"Ảnh nhiễu ({noise_type.split(' (')[0]})", width="stretch")
+                        st.metric("PSNR ảnh nhiễu", f"{m_noisy['psnr']} dB", f"MSE: {m_noisy['mse']:.1f}", delta_color="inverse")
+
+                    with c_clean:
+                        st.markdown(f"**3. Sau khi khử nhiễu: `{filter_name}`**")
+                        st.image(cv2.cvtColor(denoised_img, cv2.COLOR_BGR2RGB), caption=f"Đã khử nhiễu ({filter_name})", width="stretch")
+                        st.metric(
+                            "PSNR sau phục hồi",
+                            f"{m_denoised['psnr']} dB",
+                            f"{'+' if delta_psnr >= 0 else ''}{delta_psnr} dB (MSE: {m_denoised['mse']:.1f})",
+                            delta_color="normal"
+                        )
+
+                    st.caption(f"ℹ️ **Ghi chú mô hình:** {noise_desc}")
+
+                    with st.expander("🔍 Xem bản đồ sai số (Error Maps) & Phân tích chi tiết"):
+                        em1, em2 = st.columns(2)
+                        with em1:
+                            err_noisy = cv2.absdiff(img_bgr, noisy_img)
+                            err_noisy_gray = cv2.cvtColor(err_noisy, cv2.COLOR_BGR2GRAY) if len(err_noisy.shape) == 3 else err_noisy
+                            st.image(cv2.applyColorMap(err_noisy_gray, cv2.COLORMAP_JET), caption="Bản đồ nhiễu |Ảnh nhiễu - Gốc| (JET Colormap)", width="stretch")
+                        with em2:
+                            err_denoised = cv2.absdiff(img_bgr, denoised_img)
+                            err_denoised_gray = cv2.cvtColor(err_denoised, cv2.COLOR_BGR2GRAY) if len(err_denoised.shape) == 3 else err_denoised
+                            st.image(cv2.applyColorMap(err_denoised_gray, cv2.COLORMAP_JET), caption="Bản đồ sai số còn lại |Ảnh sau lọc - Gốc| (JET Colormap)", width="stretch")
+
+                else:
+                    st.markdown("##### 📊 So sánh Hiệu năng Khử nhiễu Toàn diện trên 5 Loại Nhiễu")
+                    st.caption("Chạy tự động mô phỏng 5 loại nhiễu và áp dụng bộ lọc tối ưu nhất theo lý thuyết xử lý ảnh số.")
+
+                    with st.spinner("Đang xử lý mô phỏng và khử nhiễu toàn diện..."):
+                        bench_res = img_processor.demonstrate_noise_processing(img_bgr)
+
+                    table_rows = []
+                    filter_reasons = {
+                        "Gaussian": "NLM so sánh cấu trúc patch toàn ảnh → giữ chi tiết bề mặt tốt nhất.",
+                        "Salt-and-Pepper": "Median loại bỏ hoàn toàn các giá trị cực trị (0 và 255) mà không làm mờ viền.",
+                        "Poisson": "NLM thích ứng tốt với nhiễu phụ thuộc tín hiệu photon.",
+                        "Speckle": "Bilateral kết hợp lọc không gian và cường độ → bảo toàn cạnh đối tượng giao thông.",
+                        "Uniform": "Gaussian blur làm mượt phân phối đều hiệu quả.",
+                    }
+
+                    for n_name, data in bench_res.items():
+                        table_rows.append({
+                            "Loại Nhiễu": n_name,
+                            "Bộ lọc Khuyên dùng": data["filter"],
+                            "PSNR Nhiễu (dB)": f"{data['psnr_noisy']:.2f}",
+                            "PSNR Sau Lọc (dB)": f"{data['psnr_denoised']:.2f}",
+                            "Cải thiện ΔPSNR": f"+{data['delta_psnr']:.2f} dB" if data['delta_psnr'] >= 0 else f"{data['delta_psnr']:.2f} dB",
+                            "MSE Nhiễu → Lọc": f"{data['mse_noisy']:.1f} → {data['mse_denoised']:.1f}",
+                            "Lý do Khuyến nghị": filter_reasons.get(n_name, "")
+                        })
+
+                    st.dataframe(pd.DataFrame(table_rows), hide_index=True, width="stretch")
+
+                    st.markdown("##### Lưới đối chiếu trực quan (Ảnh nhiễu vs Ảnh sau lọc):")
+                    for n_name, data in bench_res.items():
+                        with st.container(border=True):
+                            c_info, c_n, c_d = st.columns([1, 2, 2])
+                            with c_info:
+                                st.markdown(f"### {n_name}")
+                                st.markdown(f"**Bộ lọc:** `{data['filter']}`")
+                                st.metric("Cải thiện PSNR", f"+{data['delta_psnr']:.2f} dB")
+                                st.caption(filter_reasons.get(n_name, ""))
+                            with c_n:
+                                st.image(cv2.cvtColor(data["noisy"], cv2.COLOR_BGR2RGB), caption=f"Ảnh Nhiễu {n_name} (PSNR: {data['psnr_noisy']} dB)", width="stretch")
+                            with c_d:
+                                st.image(cv2.cvtColor(data["denoised"], cv2.COLOR_BGR2RGB), caption=f"Đã Lọc: {data['filter']} (PSNR: {data['psnr_denoised']} dB)", width="stretch")
+            else:
+                st.info("👆 Vui lòng tải lên một bức ảnh giao thông hoặc chọn sử dụng ảnh mẫu để bắt đầu thử nghiệm xử lý ảnh nhiễu.")
+
 
 
     # ----------------------------------------------------
@@ -1797,6 +2020,13 @@ Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt
         ##### 9. Biến đổi phối cảnh (Perspective Transform)
         - Sử dụng ma trận Homography (3×3) để chuyển đổi góc nhìn camera xiên thành Bird's Eye View (nhìn từ trên xuống).
         - Ứng dụng: đo mật độ giao thông, khoảng cách giữa các xe chính xác hơn.
+
+        ##### 10. Xử lý Ảnh Nhiễu & Khôi phục Ảnh (Noise Models & Restoration)
+        - **Mô hình Nhiễu Gaussian**: $I_{noisy} = I + \mathcal{N}(\mu, \sigma^2)$, mô phỏng nhiễu cảm biến nhiệt độ cao hoặc khuếch đại điện tử. Khử hiệu quả nhất bằng Non-Local Means (NLM) hoặc Gaussian Filter.
+        - **Mô hình Nhiễu Muối-Tiêu (Impulse Noise)**: Thay thế ngẫu nhiên điểm ảnh bằng giá trị cực trị (0 hoặc 255). Bộ lọc Trung vị (Median Filter) là tối ưu tuyệt đối vì loại bỏ hoàn toàn các giá trị ngoại lai (outliers) mà không làm mờ biên cạnh.
+        - **Mô hình Nhiễu Poisson (Shot Noise)**: Xuất hiện do bản chất lượng tử rời rạc của photon trong ảnh chụp tốc độ cao / thiếu sáng. Phục hồi tối ưu bằng NLM thích ứng.
+        - **Mô hình Nhiễu Speckle (Multiplicative Noise)**: $I_{noisy} = I + I \cdot \mathcal{N}(0, \sigma^2)$, thường gặp trong radar, siêu âm, camera giao thông trong mưa/sương mù. Phục hồi bằng Bilateral Filter để giữ sắc nét vạch đường và thân xe.
+        - **Định lượng chất lượng phục hồi**: Sử dụng PSNR (Peak Signal-to-Noise Ratio, dB) và MSE (Mean Squared Error). Mức tăng $\Delta\text{PSNR} > 0$ chứng minh bộ lọc cải thiện chất lượng ảnh so với ảnh nhiễu.
         """)
 
 

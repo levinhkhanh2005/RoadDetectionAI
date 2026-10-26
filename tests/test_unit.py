@@ -139,5 +139,65 @@ class TestVisualizerAndDetector(unittest.TestCase):
         self.assertEqual(out_heat.shape, dummy_frame.shape)
 
 
+class TestNoiseProcessing(unittest.TestCase):
+    def setUp(self):
+        from src.image_processing import ImageProcessor
+        self.ip = ImageProcessor()
+        # Ảnh test đơn giản 60x60x3
+        self.img = np.full((60, 60, 3), 120, dtype=np.uint8)
+
+    def test_noise_generation_shapes_and_types(self):
+        g = self.ip.add_gaussian_noise(self.img, mean=0, sigma=15)
+        self.assertEqual(g.shape, self.img.shape)
+        self.assertEqual(g.dtype, np.uint8)
+
+        sp = self.ip.add_salt_pepper_noise(self.img, amount=0.05)
+        self.assertEqual(sp.shape, self.img.shape)
+        self.assertEqual(sp.dtype, np.uint8)
+
+        p = self.ip.add_poisson_noise(self.img)
+        self.assertEqual(p.shape, self.img.shape)
+        self.assertEqual(p.dtype, np.uint8)
+
+        sk = self.ip.add_speckle_noise(self.img, sigma=0.1)
+        self.assertEqual(sk.shape, self.img.shape)
+        self.assertEqual(sk.dtype, np.uint8)
+
+        u = self.ip.add_uniform_noise(self.img, low=-20, high=20)
+        self.assertEqual(u.shape, self.img.shape)
+        self.assertEqual(u.dtype, np.uint8)
+
+    def test_compute_psnr_mse(self):
+        # Ảnh giống nhau -> PSNR vô hạn, MSE = 0
+        res_ident = self.ip.compute_psnr_mse(self.img, self.img)
+        self.assertEqual(res_ident["mse"], 0.0)
+        self.assertEqual(res_ident["psnr"], float('inf'))
+
+        # Ảnh nhiễu -> MSE > 0, PSNR hữu hạn
+        noisy = self.ip.add_gaussian_noise(self.img, sigma=20)
+        res_noisy = self.ip.compute_psnr_mse(self.img, noisy)
+        self.assertGreater(res_noisy["mse"], 0)
+        self.assertGreater(res_noisy["psnr"], 0)
+        self.assertLess(res_noisy["psnr"], 60)
+
+    def test_denoising_methods(self):
+        noisy = self.ip.add_salt_pepper_noise(self.img, amount=0.05)
+        for method in ["nlm", "median", "bilateral", "mean", "gaussian"]:
+            denoised = self.ip.apply_denoising(noisy, method=method)
+            self.assertEqual(denoised.shape, self.img.shape)
+            self.assertEqual(denoised.dtype, np.uint8)
+
+    def test_demonstrate_noise_processing(self):
+        results = self.ip.demonstrate_noise_processing(self.img)
+        expected_keys = {"Gaussian", "Salt-and-Pepper", "Poisson", "Speckle", "Uniform"}
+        self.assertEqual(set(results.keys()), expected_keys)
+        for k, v in results.items():
+            self.assertIn("noisy", v)
+            self.assertIn("denoised", v)
+            self.assertIn("filter", v)
+            self.assertIn("psnr_noisy", v)
+            self.assertIn("psnr_denoised", v)
+
+
 if __name__ == "__main__":
     unittest.main()
