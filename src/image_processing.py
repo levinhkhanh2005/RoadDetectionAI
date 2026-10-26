@@ -769,7 +769,8 @@ class ImageProcessor:
 
     def apply_denoising(self, image: np.ndarray,
                         method: str = "nlm",
-                        h: float = 10.0) -> np.ndarray:
+                        h: float = 10.0,
+                        ksize: int = 5) -> np.ndarray:
         """
         Khử nhiễu ảnh (Image Denoising).
 
@@ -786,7 +787,14 @@ class ImageProcessor:
         - 'median': Median Filter
           Thay mỗi pixel bằng giá trị trung vị của láng giềng.
           Hiệu quả với nhiễu muối tiêu (salt-and-pepper noise).
+
+        - 'mean': Box / Mean Filter
+          Lọc trung bình láng giềng ksize x ksize.
+
+        - 'gaussian': Gaussian Filter
+          Làm mượt bằng phân phối chuẩn 2D.
         """
+        k = ksize if ksize % 2 == 1 else ksize + 1
         if method == "nlm":
             if len(image.shape) == 3:
                 return cv2.fastNlMeansDenoisingColored(image, None, h, h, 7, 21)
@@ -795,7 +803,11 @@ class ImageProcessor:
         elif method == "bilateral":
             return cv2.bilateralFilter(image, 9, 75, 75)
         elif method == "median":
-            return cv2.medianBlur(image, 5)
+            return cv2.medianBlur(image, k)
+        elif method == "mean":
+            return cv2.blur(image, (k, k))
+        elif method == "gaussian":
+            return cv2.GaussianBlur(image, (k, k), 0)
         else:
             return image
 
@@ -1937,3 +1949,161 @@ class ImageProcessor:
         }
 
         return results
+
+    # =====================================================================
+    # 15. XỬ LÝ ẢNH NHIỄU (NOISE PROCESSING)
+    # =====================================================================
+
+    def add_gaussian_noise(self, image: np.ndarray,
+                           mean: float = 0.0,
+                           sigma: float = 25.0) -> np.ndarray:
+        """
+        Thêm nhiễu Gaussian (Gaussian Noise) vào ảnh.
+
+        Mô hình: I_noisy(x,y) = I(x,y) + N(mean, sigma²)
+        N là biến ngẫu nhiên phân phối chuẩn.
+        sigma lớn → nhiễu mạnh hơn.
+        Đây là loại nhiễu phổ biến nhất trong ảnh số (sensor noise, electronic noise).
+        """
+        noise = np.random.normal(mean, sigma, image.shape)
+        noisy = image.astype(np.float64) + noise
+        return np.clip(noisy, 0, 255).astype(np.uint8)
+
+    def add_salt_pepper_noise(self, image: np.ndarray,
+                              amount: float = 0.02,
+                              salt_ratio: float = 0.5) -> np.ndarray:
+        """
+        Thêm nhiễu Muối-Tiêu (Salt-and-Pepper / Impulse Noise).
+
+        Một tỷ lệ pixel ngẫu nhiên bị thay thế bằng giá trị cực đại (255 = muối)
+        hoặc cực tiểu (0 = tiêu).
+        amount: Tỷ lệ pixel bị nhiễu (0.0 – 1.0).
+        salt_ratio: Tỷ lệ muối / tổng nhiễu.
+        Nguyên nhân thực tế: Lỗi truyền dữ liệu, pixel chết trên sensor.
+        """
+        out = image.copy()
+        total_pixels = image.size if len(image.shape) == 2 else image.shape[0] * image.shape[1]
+
+        # Salt (trắng)
+        n_salt = int(total_pixels * amount * salt_ratio)
+        salt_coords = (
+            np.random.randint(0, image.shape[0], n_salt),
+            np.random.randint(0, image.shape[1], n_salt),
+        )
+        out[salt_coords] = 255
+
+        # Pepper (đen)
+        n_pepper = int(total_pixels * amount * (1.0 - salt_ratio))
+        pepper_coords = (
+            np.random.randint(0, image.shape[0], n_pepper),
+            np.random.randint(0, image.shape[1], n_pepper),
+        )
+        out[pepper_coords] = 0
+
+        return out
+
+    def add_poisson_noise(self, image: np.ndarray) -> np.ndarray:
+        """
+        Thêm nhiễu Poisson (Shot Noise / Photon Noise).
+
+        Mô hình: Số photon đến mỗi pixel tuân theo phân phối Poisson.
+        Nhiễu phụ thuộc vào tín hiệu (signal-dependent noise):
+        vùng sáng → nhiễu lớn hơn, vùng tối → nhiễu nhỏ hơn.
+        Phổ biến trong ảnh y tế (X-ray, CT), thiên văn, ảnh thiếu sáng.
+        """
+        img_float = image.astype(np.float64) / 255.0
+        # Nhân lên để Poisson sampling có ý nghĩa, rồi chuẩn hóa lại
+        noisy = np.random.poisson(img_float * 255.0) / 255.0
+        return np.clip(noisy * 255.0, 0, 255).astype(np.uint8)
+
+    def add_speckle_noise(self, image: np.ndarray,
+                          sigma: float = 0.15) -> np.ndarray:
+        """
+        Thêm nhiễu Speckle (Multiplicative Noise).
+
+        Mô hình: I_noisy = I + I × N(0, sigma²)
+        Nhiễu nhân tính: cường độ nhiễu tỷ lệ với cường độ pixel.
+        Phổ biến trong ảnh SAR (radar), siêu âm (ultrasound), ảnh laser.
+        """
+        noise = np.random.normal(0, sigma, image.shape)
+        noisy = image.astype(np.float64) + image.astype(np.float64) * noise
+        return np.clip(noisy, 0, 255).astype(np.uint8)
+
+    def add_uniform_noise(self, image: np.ndarray,
+                          low: float = -30.0,
+                          high: float = 30.0) -> np.ndarray:
+        """
+        Thêm nhiễu Đều (Uniform Noise).
+
+        Mô hình: I_noisy(x,y) = I(x,y) + U(low, high)
+        U là biến ngẫu nhiên phân phối đều trên [low, high].
+        Ít phổ biến hơn Gaussian trong thực tế, nhưng hữu ích
+        cho mục đích giảng dạy và kiểm thử thuật toán lọc.
+        """
+        noise = np.random.uniform(low, high, image.shape)
+        noisy = image.astype(np.float64) + noise
+        return np.clip(noisy, 0, 255).astype(np.uint8)
+
+    def compute_psnr_mse(self, clean: np.ndarray, test_image: np.ndarray) -> Dict[str, float]:
+        """
+        Tính PSNR (dB) và MSE giữa ảnh gốc và ảnh so sánh.
+        """
+        c = clean.copy()
+        t = test_image.copy()
+        if c.shape != t.shape:
+            if len(c.shape) == 2 and len(t.shape) == 3:
+                c = cv2.cvtColor(c, cv2.COLOR_GRAY2BGR)
+            elif len(c.shape) == 3 and len(t.shape) == 2:
+                t = cv2.cvtColor(t, cv2.COLOR_GRAY2BGR)
+        mse = float(np.mean((c.astype(np.float64) - t.astype(np.float64)) ** 2))
+        psnr = 10.0 * np.log10(255.0 ** 2 / max(mse, 1e-10)) if mse > 0 else float('inf')
+        return {"psnr": round(float(psnr), 2), "mse": round(mse, 2)}
+
+    def demonstrate_noise_processing(self, image: np.ndarray,
+                                     gaussian_sigma: float = 25.0,
+                                     sp_amount: float = 0.02,
+                                     speckle_sigma: float = 0.15,
+                                     uniform_range: float = 30.0,
+                                     denoise_h: float = 10.0
+                                     ) -> Dict[str, Dict[str, Any]]:
+        """
+        Trình diễn thêm nhiễu + khử nhiễu cho từng loại nhiễu.
+
+        Với mỗi loại nhiễu:
+        1. Tạo ảnh nhiễu từ ảnh gốc.
+        2. Áp dụng bộ lọc khử nhiễu phù hợp nhất.
+        3. Tính toán PSNR, MSE để định lượng hiệu quả lọc.
+        """
+        configs = [
+            ("Gaussian", lambda: self.add_gaussian_noise(image, sigma=gaussian_sigma),
+             lambda n: self.apply_denoising(n, method="nlm", h=denoise_h), "NLM (Non-Local Means)"),
+            ("Salt-and-Pepper", lambda: self.add_salt_pepper_noise(image, amount=sp_amount),
+             lambda n: self.apply_denoising(n, method="median", ksize=5), "Median Filter"),
+            ("Poisson", lambda: self.add_poisson_noise(image),
+             lambda n: self.apply_denoising(n, method="nlm", h=denoise_h), "NLM (Non-Local Means)"),
+            ("Speckle", lambda: self.add_speckle_noise(image, sigma=speckle_sigma),
+             lambda n: self.apply_denoising(n, method="bilateral"), "Bilateral Filter"),
+            ("Uniform", lambda: self.add_uniform_noise(image, low=-uniform_range, high=uniform_range),
+             lambda n: self.apply_denoising(n, method="gaussian", ksize=5), "Gaussian Blur"),
+        ]
+
+        results = {}
+        for name, noise_fn, denoise_fn, filter_name in configs:
+            noisy = noise_fn()
+            denoised = denoise_fn(noisy)
+            m_noisy = self.compute_psnr_mse(image, noisy)
+            m_denoised = self.compute_psnr_mse(image, denoised)
+            delta_psnr = round(m_denoised["psnr"] - m_noisy["psnr"], 2) if m_noisy["psnr"] != float('inf') and m_denoised["psnr"] != float('inf') else 0.0
+            results[name] = {
+                "noisy": noisy,
+                "denoised": denoised,
+                "filter": filter_name,
+                "psnr_noisy": m_noisy["psnr"],
+                "psnr_denoised": m_denoised["psnr"],
+                "mse_noisy": m_noisy["mse"],
+                "mse_denoised": m_denoised["mse"],
+                "delta_psnr": delta_psnr,
+            }
+
+        return results
+
