@@ -6,12 +6,14 @@ Chạy lệnh:
 """
 
 import os
+import tempfile
 import unittest
 import numpy as np
 
 from src.tracker import VehicleCounter, intersect, ccw
 from src.detector import VEHICLE_COLORS, CLASS_NAMES_VI
 from src.visualizer import Visualizer
+from src.video_processing import cleanup_temp_video
 
 
 class TestGeometryAndTracker(unittest.TestCase):
@@ -30,6 +32,12 @@ class TestGeometryAndTracker(unittest.TestCase):
         # 2 đoạn thẳng song song không cắt nhau
         cd_parallel = ((0, 8), (10, 8))
         self.assertFalse(intersect(ab[0], ab[1], cd_parallel[0], cd_parallel[1]))
+
+        # Chạm đúng đầu mút vẫn được tính là giao nhau.
+        self.assertTrue(intersect((0, 0), (10, 0), (10, 0), (10, 10)))
+
+        # Hai đoạn thẳng thẳng hàng nhưng tách rời không giao nhau.
+        self.assertFalse(intersect((0, 0), (10, 0), (11, 0), (20, 0)))
 
     def test_get_center_is_bottom_center(self):
         counter = VehicleCounter()
@@ -114,8 +122,39 @@ class TestGeometryAndTracker(unittest.TestCase):
 
         with open(test_path, "r", encoding="utf-8") as f:
             lines = [l.strip() for l in f.readlines()]
-            self.assertEqual(lines[0], "timestamp,track_id,class_en,class_vi,direction,x,y")
+            self.assertEqual(lines[0], "timestamp,track_id,class_en,class_vi,direction,x,y,speed_kmh,speed_avg_kmh,speed_max_kmh")
             self.assertIn("bus,Xe buyt", lines[1])
+
+    def test_stationary_vehicle_speed_is_zero(self):
+        counter = VehicleCounter(pixels_per_meter=10)
+        obj = {"track_id": 7, "class_en": "car", "bbox": [100, 100, 140, 140]}
+        counter.update([obj.copy()], timestamp=0.0)
+        second = obj.copy()
+        counter.update([second], timestamp=1.0)
+        self.assertEqual(second["speed_kmh"], 0.0)
+        self.assertEqual(counter.current_speeds[7], 0.0)
+
+    def test_moving_vehicle_speed_is_attached_to_object(self):
+        counter = VehicleCounter(pixels_per_meter=10)
+        counter.update([{"track_id": 6, "class_en": "car", "bbox": [0, 0, 20, 20]}], timestamp=0.0)
+        moving = {"track_id": 6, "class_en": "car", "bbox": [0, 10, 20, 30]}
+        counter.update([moving], timestamp=1.0)
+        self.assertAlmostEqual(moving["speed_kmh"], 3.6, places=1)
+
+    def test_missing_timestamp_uses_safe_fallback(self):
+        counter = VehicleCounter(pixels_per_meter=10)
+        counter.update([{"track_id": 8, "class_en": "car", "bbox": [0, 0, 20, 20]}])
+        counter.update([{"track_id": 8, "class_en": "car", "bbox": [0, 0, 20, 20]}])
+        self.assertEqual(counter.current_speeds[8], 0.0)
+
+    def test_lost_track_is_removed_from_live_speed_summary(self):
+        counter = VehicleCounter(pixels_per_meter=10)
+        counter.update([{"track_id": 9, "class_en": "car", "bbox": [0, 0, 20, 20]}], timestamp=0.0)
+        counter.update([{"track_id": 9, "class_en": "car", "bbox": [0, 0, 20, 30]}], timestamp=1.0)
+        self.assertIn(9, counter.current_speeds)
+        counter.update([], timestamp=2.0)
+        self.assertNotIn(9, counter.current_speeds)
+        self.assertEqual(counter.get_speed_summary()["warning_count"], 0)
 
 
 class TestVisualizerAndDetector(unittest.TestCase):
@@ -197,6 +236,14 @@ class TestNoiseProcessing(unittest.TestCase):
             self.assertIn("filter", v)
             self.assertIn("psnr_noisy", v)
             self.assertIn("psnr_denoised", v)
+
+
+class TestVideoProcessing(unittest.TestCase):
+    def test_cleanup_temp_video_removes_owned_temp_file(self):
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = temp_file.name
+        cleanup_temp_video(temp_path)
+        self.assertFalse(os.path.exists(temp_path))
 
 
 if __name__ == "__main__":

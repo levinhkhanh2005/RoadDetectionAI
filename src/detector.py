@@ -104,7 +104,8 @@ class VehicleDetector:
                     "class_id": cls_id,
                     "class_en": name_en,
                     "class_vi": name_vi,
-                    "track_id": None
+                    "track_id": None,
+                    "speed_kmh": 0.0
                 })
 
         return detections
@@ -155,7 +156,8 @@ class VehicleDetector:
                     "class_id": cls_id,
                     "class_en": name_en,
                     "class_vi": name_vi,
-                    "track_id": track_id
+                    "track_id": track_id,
+                    "speed_kmh": 0.0
                 })
 
         return tracked_objects
