@@ -76,6 +76,7 @@ runs/predict*/
 # Bỏ qua kết quả đầu ra khi chạy nhận diện / kiểm thử
 data/output/*
 !data/output/.gitkeep
+backups/
 
 # Logs & Test caches
 *.log

@@ -90,6 +90,18 @@ streamlit run app_streamlit.py
 
 `local_admin_username` và `local_admin_password` trong secrets là tài khoản quản trị nội bộ dùng cho lần đăng nhập đầu tiên. Mật khẩu được băm trước khi lưu vào PostgreSQL. Admin có thể tạo thêm user, địa điểm và camera trong sidebar; viewer chỉ được xử lý và tra cứu dữ liệu theo quyền ứng dụng. `DATABASE_URL` cũng có thể đặt bằng biến môi trường thay cho `database_url` trong secrets.
 
+Các migration mới bổ sung trạng thái phiên, timestamp theo frame, chống trùng event và phân trang lịch sử. Sau khi cập nhật code, chạy:
+
+```powershell
+python -m alembic upgrade head
+```
+
+Tạo backup thủ công bằng PowerShell (lệnh sẽ hỏi mật khẩu PostgreSQL):
+
+```powershell
+.\scripts\backup_postgres.ps1
+```
+
 Khi chạy CLI, truyền `--camera-id` và `--location-id` để ghi event vào PostgreSQL; nếu không truyền hai tham số này, CLI vẫn chỉ xuất CSV cục bộ để tương thích các lệnh cũ:
 
 ```powershell

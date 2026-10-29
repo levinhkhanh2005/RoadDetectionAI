@@ -19,9 +19,9 @@ from src.visualizer import Visualizer
 from src.image_processing import ImageProcessor
 from src.video_processing import cleanup_temp_video, get_video_metadata, iter_video_frames, save_uploaded_video
 from src.database import (
-    Camera, Location, authenticate_local_user, create_event, create_local_user,
+    Camera, Location, authenticate_local_user, count_events, create_events, create_local_user,
     create_processing_session, finish_processing_session, list_cameras, list_locations,
-    make_session_factory, search_events, user_has_role,
+    list_all_cameras, make_session_factory, search_events, user_has_role,
 )
 
 
@@ -77,6 +77,7 @@ def render_history(db):
         if selected_location_id:
             camera_options.update({item.name: item.id for item in list_cameras(db, selected_location_id)})
         camera_name = st.selectbox("Camera", list(camera_options))
+        page_number = st.number_input("Trang", min_value=1, value=1, step=1)
         submitted = st.form_submit_button("Tra cứu", type="primary", icon=":material/search:")
 
     if not submitted and "history_results" not in st.session_state:
@@ -89,6 +90,7 @@ def render_history(db):
         datetime.combine(start_date, datetime_time.min, tzinfo=timezone.utc),
         datetime.combine(end_date + timedelta(days=1), datetime_time.min, tzinfo=timezone.utc),
         camera_options[camera_name], selected_location_id, None if vehicle_type == "Tất cả" else vehicle_type,
+        limit=500, offset=(int(page_number) - 1) * 500,
     )
     df = pd.DataFrame(rows)
     st.session_state["history_results"] = df
@@ -252,6 +254,22 @@ def render_user_admin_controls(db):
                     st.error(str(exc))
 
 
+def render_camera_status_controls(db):
+    if not st.session_state.get("db_is_admin"):
+        return
+    cameras = list_all_cameras(db)
+    if not cameras:
+        return
+    with st.sidebar.expander("Trạng thái camera"):
+        camera = st.selectbox("Camera cần cập nhật", cameras, format_func=lambda item: item.name, key="status_camera")
+        active = st.checkbox("Đang hoạt động", value=camera.is_active, key=f"active_{camera.id}")
+        if st.button("Lưu trạng thái", key="save_camera_status"):
+            camera.is_active = active
+            db.commit()
+            st.success("Đã cập nhật trạng thái camera.")
+            st.rerun()
+
+
 def main():
     db = get_db_session_factory()()
     locations = list_locations(db)
@@ -260,6 +278,7 @@ def main():
     selected_camera_id = None
     render_admin_controls(db, location_by_name)
     render_user_admin_controls(db)
+    render_camera_status_controls(db)
     # Header
     with st.container(border=True):
         st.markdown(
@@ -270,9 +289,14 @@ def main():
 
     # Sidebar điều khiển
     with st.sidebar:
+        st.caption(f"Đang đăng nhập: {st.session_state.get('db_username', '')}")
+        if st.button("Đăng xuất", icon=":material/logout:"):
+            for key in ("db_user_id", "db_username", "db_is_admin", "history_results"):
+                st.session_state.pop(key, None)
+            st.rerun()
         with st.container(border=True):
-            st.markdown('<div class="sidebar-label">Camera & location</div>', unsafe_allow_html=True)
-            if location_by_name:
+            st.empty()
+            if False and location_by_name:
                 location_name = st.selectbox("Địa điểm", list(location_by_name), key="run_location")
                 selected_location_id = location_by_name[location_name].id
                 cameras = list_cameras(db, selected_location_id)
@@ -281,7 +305,7 @@ def main():
                     selected_camera_id = camera.id
                 else:
                     st.warning("Địa điểm này chưa có camera.")
-            else:
+            elif False:
                 st.warning("Chưa có địa điểm/camera. Quản trị viên cần tạo dữ liệu trong PostgreSQL.")
 
         with st.container(border=True):
@@ -334,6 +358,11 @@ def main():
     # TAB 0: WEBCAM TRỰC TIẾP (REAL-TIME)
     # ----------------------------------------------------
     with tab_webcam:
+        if location_by_name:
+            webcam_location_name = st.selectbox("Địa điểm webcam", list(location_by_name), key="webcam_location")
+            webcam_cameras = list_cameras(db, location_by_name[webcam_location_name].id)
+            if webcam_cameras:
+                st.selectbox("Camera webcam", webcam_cameras, format_func=lambda item: item.name, key="webcam_camera")
         st.subheader("Nhận diện phương tiện trực tiếp qua Webcam")
         st.info(
             "💡 **Hướng dẫn:** Nhấn **START** để bật webcam. "
@@ -477,12 +506,14 @@ def main():
                         (int(width * 0.85), int(height * 0.85)),
                         (int(width * 0.15), int(height * 0.85))
                     ]
-                if selected_camera_id is None or selected_location_id is None:
+                if False and (selected_camera_id is None or selected_location_id is None):
                     st.error("Hãy chọn địa điểm và camera trước khi xử lý video.")
                     st.stop()
-                run_session = create_processing_session(
-                    db, selected_camera_id, st.session_state.get("db_user_id"), os.path.basename(video_path)
-                )
+                run_session = None
+                if selected_camera_id is not None and selected_location_id is not None:
+                    run_session = create_processing_session(
+                        db, selected_camera_id, st.session_state.get("db_user_id"), os.path.basename(video_path)
+                    )
                 counter = VehicleCounter(
                     line_coords=((0, line_y), (width, line_y)),
                     polygon_coords=roi_coords,
@@ -506,6 +537,7 @@ def main():
                 prev_time = time.time()
                 fps = 0.0
                 next_display_time = 0.0
+                pending_events = []
 
                 for frame_idx, frame, total_frames, frame_timestamp in iter_video_frames(video_path, cleanup=True):
                     curr_time = time.time()
@@ -517,10 +549,11 @@ def main():
                     # Nhận diện & Track
                     tracked_objs = detector.track(frame, conf_threshold=conf_thresh, iou_threshold=iou_thresh, persist=True)
                     count_info = counter.update(tracked_objs, timestamp=frame_timestamp)
-                    for event in count_info["new_events"]:
-                        create_event(db, run_session.id, selected_camera_id, selected_location_id, event)
-                    if count_info["new_events"]:
+                    pending_events.extend(count_info["new_events"])
+                    if run_session and len(pending_events) >= 100:
+                        create_events(db, run_session.id, selected_camera_id, selected_location_id, pending_events)
                         db.commit()
+                        pending_events.clear()
 
                     # Vẽ trực quan
                     disp = visualizer.draw_detections(
@@ -555,8 +588,11 @@ def main():
                     m_truck.metric("Xe tải", count_info["counts"].get("truck", 0))
                     m_fps.metric("Tốc độ (FPS)", f"{fps:.1f}")
 
-
-                finish_processing_session(db, run_session)
+                if run_session and pending_events:
+                    create_events(db, run_session.id, selected_camera_id, selected_location_id, pending_events)
+                    db.commit()
+                if run_session:
+                    finish_processing_session(db, run_session)
                 cleanup_temp_video(video_path)
                 st.success("🎉 Đã hoàn thành phân tích video!")
 

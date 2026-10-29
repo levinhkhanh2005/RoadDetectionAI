@@ -219,6 +219,7 @@ class VehicleCounter:
 
                 event_info = {
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "frame_timestamp": object_timestamp,
                     "track_id": track_id,
                     "class_en": cls_en,
                     "class_vi": obj.get("class_vi", "Xe"),
