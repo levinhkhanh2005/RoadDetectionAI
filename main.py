@@ -22,6 +22,7 @@ import cv2
 from src.detector import VehicleDetector, VEHICLE_COLORS
 from src.tracker import VehicleCounter
 from src.visualizer import Visualizer
+from src.database import create_event, create_processing_session, finish_processing_session, make_session_factory
 
 
 def parse_args():
@@ -40,6 +41,8 @@ def parse_args():
                         help="Khong hien thi cua so OpenCV (phu hop khi xu ly ngam hoac headless)")
     parser.add_argument("--device", type=str, default="",
                         help="Thiet bi tinh toan ('cpu', 'cuda', hoac de trong)")
+    parser.add_argument("--camera-id", type=int, default=None, help="ID camera PostgreSQL de luu lich su")
+    parser.add_argument("--location-id", type=int, default=None, help="ID dia diem PostgreSQL de luu lich su")
     return parser.parse_args()
 
 
@@ -115,6 +118,11 @@ def process_video_or_camera(args):
     line_y = int(frame_height * args.line_y)
     counting_line = ((0, line_y), (frame_width, line_y))
     counter = VehicleCounter(line_coords=counting_line)
+    db = None
+    run_session = None
+    if args.camera_id is not None and args.location_id is not None:
+        db = make_session_factory()()
+        run_session = create_processing_session(db, args.camera_id, None, str(args.source))
 
     # Thiet lap ghi video neu bat --save
     writer = None
@@ -166,6 +174,10 @@ def process_video_or_camera(args):
 
             # 2. Cap nhat bo dem xe qua vach
             count_info = counter.update(tracked_objects)
+            if db and count_info["new_events"]:
+                for event in count_info["new_events"]:
+                    create_event(db, run_session.id, args.camera_id, args.location_id, event)
+                db.commit()
 
             # 3. Truc quan hoa
             # - Ve bounding boxes & nhan xe
@@ -216,6 +228,9 @@ def process_video_or_camera(args):
 
     # Giai phong tai nguyen
     cap.release()
+    if db and run_session:
+        finish_processing_session(db, run_session)
+        db.close()
     if writer is not None:
         writer.release()
     if not args.no_show:

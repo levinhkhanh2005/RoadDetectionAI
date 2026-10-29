@@ -6,3 +6,6 @@ matplotlib>=3.7.0
 numpy>=1.24.0
 streamlit-webrtc>=0.47.0
 av>=10.0.0
+SQLAlchemy>=2.0.0
+psycopg[binary]>=3.2.0
+alembic>=1.14.0

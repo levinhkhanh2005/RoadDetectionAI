@@ -76,6 +76,25 @@ pip install -r requirements.txt
 ```powershell
 streamlit run app_streamlit.py
 ```
+
+### PostgreSQL, lịch sử và phân quyền
+
+Ứng dụng dùng PostgreSQL để lưu địa điểm, camera, phiên xử lý và sự kiện xe. Cài dependency rồi cấu hình `.streamlit/secrets.toml` từ file mẫu:
+
+```powershell
+pip install -r requirements.txt
+Copy-Item .streamlit/secrets.toml.example .streamlit/secrets.toml
+alembic upgrade head
+streamlit run app_streamlit.py
+```
+
+`local_admin_username` và `local_admin_password` trong secrets là tài khoản quản trị nội bộ dùng cho lần đăng nhập đầu tiên. Mật khẩu được băm trước khi lưu vào PostgreSQL. Admin có thể tạo thêm user, địa điểm và camera trong sidebar; viewer chỉ được xử lý và tra cứu dữ liệu theo quyền ứng dụng. `DATABASE_URL` cũng có thể đặt bằng biến môi trường thay cho `database_url` trong secrets.
+
+Khi chạy CLI, truyền `--camera-id` và `--location-id` để ghi event vào PostgreSQL; nếu không truyền hai tham số này, CLI vẫn chỉ xuất CSV cục bộ để tương thích các lệnh cũ:
+
+```powershell
+python main.py --source data/samples/traffic.mp4 --save --camera-id 1 --location-id 1
+```
 Trình duyệt sẽ tự động mở trang web dashboard tại địa chỉ `http://localhost:8501`. Tại đây bạn có thể:
 - Kéo thả video hoặc chọn video mẫu có sẵn.
 - Tùy chỉnh thanh trượt độ tin cậy (Confidence) và vị trí vạch đếm ảo.
