@@ -2,6 +2,7 @@ import os
 import glob
 import time
 import threading
+from datetime import datetime, time as datetime_time, timedelta, timezone
 from pathlib import Path
 import cv2
 import numpy as np
@@ -17,9 +18,85 @@ from src.tracker import VehicleCounter
 from src.visualizer import Visualizer
 from src.image_processing import ImageProcessor
 from src.video_processing import cleanup_temp_video, get_video_metadata, iter_video_frames, save_uploaded_video
+from src.database import (
+    Camera, Location, authenticate_local_user, create_event, create_local_user,
+    create_processing_session, finish_processing_session, list_cameras, list_locations,
+    make_session_factory, search_events, user_has_role,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+@st.cache_resource
+def get_db_session_factory():
+    return make_session_factory()
+
+
+def authenticate_user():
+    """Authenticate against local PostgreSQL users."""
+    if st.session_state.get("db_user_id"):
+        return
+    try:
+        admin_username = str(st.secrets["local_admin_username"])
+        admin_password = str(st.secrets["local_admin_password"])
+    except Exception:
+        st.error("Thiếu local_admin_username/local_admin_password trong .streamlit/secrets.toml")
+        st.stop()
+    st.title("Đăng nhập hệ thống")
+    with st.form("local_login"):
+        username = st.text_input("Username", placeholder="admin@example.com")
+        password = st.text_input("Mật khẩu", type="password")
+        submitted = st.form_submit_button("Đăng nhập", type="primary", icon=":material/login:")
+    if not submitted:
+        st.stop()
+    db = get_db_session_factory()()
+    try:
+        user = authenticate_local_user(db, username, password, admin_username, admin_password)
+        if user is None:
+            st.error("Username hoặc mật khẩu không đúng.")
+            st.stop()
+        st.session_state.update(db_user_id=user.id, db_username=user.email, db_is_admin=user_has_role(user, "admin"))
+    finally:
+        db.close()
+    st.rerun()
+
+
+def render_history(db):
+    st.subheader("Tra cứu lịch sử phương tiện")
+    locations = list_locations(db)
+    location_options = {"Tất cả địa điểm": None, **{item.name: item.id for item in locations}}
+    with st.form("history_filters"):
+        col1, col2, col3 = st.columns(3)
+        start_date = col1.date_input("Từ ngày", value=datetime.now().date() - timedelta(days=7))
+        end_date = col2.date_input("Đến ngày", value=datetime.now().date())
+        vehicle_type = col3.selectbox("Loại xe", ["Tất cả", "car", "motorcycle", "bus", "truck", "bicycle"])
+        location_name = st.selectbox("Địa điểm", list(location_options))
+        selected_location_id = location_options[location_name]
+        camera_options = {"Tất cả camera": None}
+        if selected_location_id:
+            camera_options.update({item.name: item.id for item in list_cameras(db, selected_location_id)})
+        camera_name = st.selectbox("Camera", list(camera_options))
+        submitted = st.form_submit_button("Tra cứu", type="primary", icon=":material/search:")
+
+    if not submitted and "history_results" not in st.session_state:
+        return
+    if end_date < start_date:
+        st.error("Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.")
+        return
+    rows = search_events(
+        db,
+        datetime.combine(start_date, datetime_time.min, tzinfo=timezone.utc),
+        datetime.combine(end_date + timedelta(days=1), datetime_time.min, tzinfo=timezone.utc),
+        camera_options[camera_name], selected_location_id, None if vehicle_type == "Tất cả" else vehicle_type,
+    )
+    df = pd.DataFrame(rows)
+    st.session_state["history_results"] = df
+    if df.empty:
+        st.info("Không tìm thấy sự kiện phù hợp.")
+        return
+    st.dataframe(df, hide_index=True, width="stretch")
+    st.download_button("Xuất CSV", df.to_csv(index=False).encode("utf-8-sig"), "vehicle_history.csv", "text/csv", icon=":material/download:")
 
 
 def resolve_model_path(model_name: str) -> str:
@@ -138,7 +215,51 @@ def load_all_experiments(base_dir: str):
     return pd.DataFrame(experiments)
 
 
+def render_admin_controls(db, location_by_name):
+    if not st.session_state.get("db_is_admin"):
+        return
+    with st.sidebar.expander("Quản lý địa điểm/camera"):
+        with st.form("create_location"):
+            new_location = st.text_input("Tên địa điểm")
+            new_address = st.text_input("Địa chỉ")
+            if st.form_submit_button("Thêm địa điểm") and new_location.strip():
+                db.add(Location(name=new_location.strip(), address=new_address.strip()))
+                db.commit()
+                st.rerun()
+        with st.form("create_camera"):
+            camera_location = st.selectbox("Địa điểm của camera", list(location_by_name) or ["Chưa có"])
+            new_camera = st.text_input("Tên camera")
+            camera_source = st.text_input("Nguồn camera/video")
+            if st.form_submit_button("Thêm camera") and new_camera.strip() and location_by_name:
+                db.add(Camera(location_id=location_by_name[camera_location].id, name=new_camera.strip(), source=camera_source.strip()))
+                db.commit()
+                st.rerun()
+
+
+def render_user_admin_controls(db):
+    if not st.session_state.get("db_is_admin"):
+        return
+    with st.sidebar.expander("Quản lý user"):
+        with st.form("create_user"):
+            new_username = st.text_input("Email user mới")
+            new_password = st.text_input("Mật khẩu user mới", type="password")
+            new_role = st.selectbox("Role", ["viewer", "admin"])
+            if st.form_submit_button("Thêm user"):
+                try:
+                    create_local_user(db, new_username, new_password, new_role)
+                    st.success("Đã tạo user.")
+                except (ValueError, RuntimeError) as exc:
+                    st.error(str(exc))
+
+
 def main():
+    db = get_db_session_factory()()
+    locations = list_locations(db)
+    location_by_name = {item.name: item for item in locations}
+    selected_location_id = None
+    selected_camera_id = None
+    render_admin_controls(db, location_by_name)
+    render_user_admin_controls(db)
     # Header
     with st.container(border=True):
         st.markdown(
@@ -149,6 +270,20 @@ def main():
 
     # Sidebar điều khiển
     with st.sidebar:
+        with st.container(border=True):
+            st.markdown('<div class="sidebar-label">Camera & location</div>', unsafe_allow_html=True)
+            if location_by_name:
+                location_name = st.selectbox("Địa điểm", list(location_by_name), key="run_location")
+                selected_location_id = location_by_name[location_name].id
+                cameras = list_cameras(db, selected_location_id)
+                if cameras:
+                    camera = st.selectbox("Camera", cameras, format_func=lambda item: item.name, key="run_camera")
+                    selected_camera_id = camera.id
+                else:
+                    st.warning("Địa điểm này chưa có camera.")
+            else:
+                st.warning("Chưa có địa điểm/camera. Quản trị viên cần tạo dữ liệu trong PostgreSQL.")
+
         with st.container(border=True):
             st.markdown('<div class="sidebar-label">AI model</div>', unsafe_allow_html=True)
             st.subheader("Cấu hình mô hình")
@@ -342,6 +477,12 @@ def main():
                         (int(width * 0.85), int(height * 0.85)),
                         (int(width * 0.15), int(height * 0.85))
                     ]
+                if selected_camera_id is None or selected_location_id is None:
+                    st.error("Hãy chọn địa điểm và camera trước khi xử lý video.")
+                    st.stop()
+                run_session = create_processing_session(
+                    db, selected_camera_id, st.session_state.get("db_user_id"), os.path.basename(video_path)
+                )
                 counter = VehicleCounter(
                     line_coords=((0, line_y), (width, line_y)),
                     polygon_coords=roi_coords,
@@ -376,6 +517,10 @@ def main():
                     # Nhận diện & Track
                     tracked_objs = detector.track(frame, conf_threshold=conf_thresh, iou_threshold=iou_thresh, persist=True)
                     count_info = counter.update(tracked_objs, timestamp=frame_timestamp)
+                    for event in count_info["new_events"]:
+                        create_event(db, run_session.id, selected_camera_id, selected_location_id, event)
+                    if count_info["new_events"]:
+                        db.commit()
 
                     # Vẽ trực quan
                     disp = visualizer.draw_detections(
@@ -411,6 +556,7 @@ def main():
                     m_fps.metric("Tốc độ (FPS)", f"{fps:.1f}")
 
 
+                finish_processing_session(db, run_session)
                 cleanup_temp_video(video_path)
                 st.success("🎉 Đã hoàn thành phân tích video!")
 
@@ -1768,6 +1914,8 @@ Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt
     # TAB 4: ĐÁNH GIÁ & LỊCH SỬ HUẤN LUYỆN
     # ----------------------------------------------------
     with tab_analytics:
+        render_history(db)
+        st.markdown("---")
         st.subheader("📈 Dashboard Đánh giá Mô hình & Lịch sử Huấn luyện")
         st.caption("Phân tích chi tiết quá trình huấn luyện, đánh giá hiệu suất và so sánh giữa các thử nghiệm — thể hiện đóng góp nghiên cứu thực nghiệm cá nhân.")
 
@@ -2059,5 +2207,6 @@ Tuy nhiên, nền tảng **xử lý ảnh cổ điển** là kiến thức bắt
 
 
 if __name__ == "__main__":
+    authenticate_user()
     main()
 
