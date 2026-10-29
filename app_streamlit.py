@@ -1,8 +1,8 @@
 import os
 import glob
-import tempfile
 import time
 import threading
+from pathlib import Path
 import cv2
 import numpy as np
 import pandas as pd
@@ -16,6 +16,22 @@ from src.detector import VehicleDetector, VEHICLE_COLORS, CLASS_NAMES_VI
 from src.tracker import VehicleCounter
 from src.visualizer import Visualizer
 from src.image_processing import ImageProcessor
+from src.video_processing import cleanup_temp_video, get_video_metadata, iter_video_frames, save_uploaded_video
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def resolve_model_path(model_name: str) -> str:
+    """Resolve model weights relative to the project, regardless of cwd."""
+    candidates = [
+        PROJECT_ROOT / "models" / model_name,
+        PROJECT_ROOT / "runs" / "detect" / "traffic_model-2" / "weights" / model_name,
+    ]
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+    return str(candidates[0])
 
 
 # Cấu hình trang Streamlit
@@ -61,7 +77,7 @@ st.markdown("""
 @st.cache_resource
 def load_detector(model_name: str):
     """Cache model YOLO để không phải tải lại nhiều lần."""
-    model_path = os.path.join("models", model_name)
+    model_path = resolve_model_path(model_name)
     return VehicleDetector(model_path=model_path)
 
 
@@ -147,6 +163,9 @@ def main():
                 index=0
             )
             model_file = model_choice.split(" ")[0]
+            pixels_per_meter = st.number_input("Pixels per meter (calibration):", 1.0, 500.0, 10.0, 1.0,
+                                               help="Số pixel tương đương 1 mét trên mặt đường.")
+            speed_warning_threshold = st.number_input("Speed warning (km/h):", 1.0, 200.0, 50.0, 1.0)
 
             conf_thresh = st.slider("Ngưỡng tự tin (Confidence Threshold):", 0.1, 1.0, 0.35, 0.05)
             iou_thresh = st.slider("Ngưỡng IoU (Non-Max Suppression):", 0.1, 1.0, 0.45, 0.05)
@@ -275,9 +294,10 @@ def main():
         if input_source == "Tải lên video của bạn (.mp4, .avi, .mov)":
             uploaded_file = st.file_uploader("Kéo thả hoặc chọn file video:", type=["mp4", "avi", "mov", "mkv"])
             if uploaded_file is not None:
-                tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                tfile.write(uploaded_file.read())
-                video_path = tfile.name
+                try:
+                    video_path = save_uploaded_video(uploaded_file)
+                except ValueError as exc:
+                    st.error(str(exc))
         else:
             # Video mẫu trong thư mục data/samples/
             sample_dir = "data/samples"
@@ -305,10 +325,12 @@ def main():
             enable_roi = col_ctrl3.checkbox("🔷 Bật vùng kiểm soát ROI", value=False)
 
             if start_btn:
-                cap = cv2.VideoCapture(video_path)
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 100
+                try:
+                    width, height, total_frames, _source_fps = get_video_metadata(video_path)
+                except OSError as exc:
+                    cleanup_temp_video(video_path)
+                    st.error(str(exc))
+                    st.stop()
 
                 # Thiết lập vạch đếm & ROI
                 line_y = int(height * line_pos)
@@ -322,7 +344,8 @@ def main():
                     ]
                 counter = VehicleCounter(
                     line_coords=((0, line_y), (width, line_y)),
-                    polygon_coords=roi_coords
+                    polygon_coords=roi_coords,
+                    pixels_per_meter=pixels_per_meter
                 )
 
                 # Khu vực hiển thị kết quả
@@ -341,14 +364,9 @@ def main():
 
                 prev_time = time.time()
                 fps = 0.0
-                frame_idx = 0
+                next_display_time = 0.0
 
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-
-                    frame_idx += 1
+                for frame_idx, frame, total_frames, frame_timestamp in iter_video_frames(video_path, cleanup=True):
                     curr_time = time.time()
                     dt = curr_time - prev_time
                     if dt > 0:
@@ -357,21 +375,32 @@ def main():
 
                     # Nhận diện & Track
                     tracked_objs = detector.track(frame, conf_threshold=conf_thresh, iou_threshold=iou_thresh, persist=True)
-                    count_info = counter.update(tracked_objs)
+                    count_info = counter.update(tracked_objs, timestamp=frame_timestamp)
 
                     # Vẽ trực quan
-                    disp = visualizer.draw_detections(frame, tracked_objs, VEHICLE_COLORS)
+                    disp = visualizer.draw_detections(
+                        frame, tracked_objs, VEHICLE_COLORS,
+                        speed_warning_threshold=speed_warning_threshold
+                    )
                     disp = visualizer.draw_trajectories(disp, counter.tracks_history)
                     disp = visualizer.draw_counting_line(disp, counter.line_coords)
                     if enable_roi and counter.polygon_coords:
                         disp = visualizer.draw_polygon_roi(disp, counter.polygon_coords)
                     if enable_heatmap:
                         disp = visualizer.draw_heatmap(disp, counter.tracks_history)
-                    disp = visualizer.draw_dashboard_hud(disp, count_info["counts"], count_info["total"], fps=fps, directions=count_info["directions"])
+                    disp = visualizer.draw_dashboard_hud(
+                        disp, count_info["counts"], count_info["total"], fps=fps,
+                        directions=count_info["directions"],
+                        speed_summary=counter.get_speed_summary(speed_warning_threshold),
+                        speed_warning_threshold=speed_warning_threshold,
+                    )
 
                     # Chuyển BGR sang RGB cho Streamlit
-                    disp_rgb = cv2.cvtColor(disp, cv2.COLOR_BGR2RGB)
-                    video_display.image(disp_rgb, channels="RGB", width="stretch")
+                    if curr_time >= next_display_time:
+                        disp_rgb = cv2.cvtColor(disp, cv2.COLOR_BGR2RGB)
+                        video_display.image(disp_rgb, channels="RGB", width="stretch")
+                        progress_bar.progress(min(1.0, frame_idx / total_frames))
+                        next_display_time = curr_time + (1 / 12)
 
                     # Cập nhật metrics
                     m_total.metric("🚗 Tổng số xe", count_info["total"])
@@ -381,9 +410,8 @@ def main():
                     m_truck.metric("Xe tải", count_info["counts"].get("truck", 0))
                     m_fps.metric("Tốc độ (FPS)", f"{fps:.1f}")
 
-                    progress_bar.progress(min(1.0, frame_idx / total_frames))
 
-                cap.release()
+                cleanup_temp_video(video_path)
                 st.success("🎉 Đã hoàn thành phân tích video!")
 
                 # Tải xuống báo cáo CSV
@@ -693,9 +721,10 @@ def main():
             if bg_source == "Tải lên video":
                 bg_uploaded = st.file_uploader("Tải video:", type=["mp4", "avi", "mov"], key="bg_video_upload")
                 if bg_uploaded is not None:
-                    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                    tfile.write(bg_uploaded.read())
-                    bg_video_path = tfile.name
+                    try:
+                        bg_video_path = save_uploaded_video(bg_uploaded)
+                    except ValueError as exc:
+                        st.error(str(exc))
             else:
                 sample_dir = "data/samples"
                 os.makedirs(sample_dir, exist_ok=True)
@@ -728,8 +757,12 @@ def main():
                 if bg_start_btn:
                     img_processor.reset_background_subtractor(bg_method)
 
-                    cap = cv2.VideoCapture(bg_video_path)
-                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 100
+                    try:
+                        _, _, total_frames, _ = get_video_metadata(bg_video_path)
+                    except OSError as exc:
+                        cleanup_temp_video(bg_video_path)
+                        st.error(str(exc))
+                        st.stop()
 
                     col_bg_view1, col_bg_view2 = st.columns(2)
                     bg_display_orig = col_bg_view1.empty()
@@ -740,11 +773,8 @@ def main():
                     bg_progress = st.progress(0)
                     bg_status = st.empty()
 
-                    frame_idx = 0
-                    while cap.isOpened():
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
+                    next_display_time = 0.0
+                    for frame_idx, frame, total_frames, _ in iter_video_frames(bg_video_path, cleanup=True):
 
                         bg_pipeline = img_processor.full_pipeline_video_frame(
                             frame, method=bg_method,
@@ -762,11 +792,9 @@ def main():
                         bg_display_result.image(cv2.cvtColor(bg_pipeline["result"], cv2.COLOR_BGR2RGB),
                                                caption=f"Kết quả: {len(bg_pipeline['detections'])} xe", width="stretch")
 
-                        frame_idx += 1
                         bg_progress.progress(min(frame_idx / total_frames, 1.0))
                         bg_status.markdown(f"Frame **{frame_idx}/{total_frames}** — Phát hiện: **{len(bg_pipeline['detections'])}** phương tiện")
 
-                    cap.release()
                     st.success("✅ Xử lý video hoàn tất!")
 
         # ----- SUB TAB 5: SO SÁNH YOLOv8 vs CỔ ĐIỂN -----

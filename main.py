@@ -183,7 +183,8 @@ def process_video_or_camera(args):
                 count_info["counts"],
                 count_info["total"],
                 fps=fps_calc,
-                directions=count_info["directions"]
+                directions=count_info["directions"],
+                speed_summary=counter.get_speed_summary(),
             )
 
             # Ghi video neu can

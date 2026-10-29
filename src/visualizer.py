@@ -63,7 +63,8 @@ class Visualizer:
         cv2.putText(img, text, (x + pad, y_bottom - pad), self.font, self.font_scale, text_color, 1, cv2.LINE_AA)
 
     def draw_detections(self, frame: np.ndarray, objects: List[Dict[str, Any]],
-                        color_map: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
+                        color_map: Dict[str, Tuple[int, int, int]],
+                        speed_warning_threshold: float = 50.0) -> np.ndarray:
         """
         Vẽ Bounding Box, nhãn phân loại và ID đối tượng lên khung hình.
         """
@@ -74,15 +75,18 @@ class Visualizer:
             cls_vi = obj.get("class_vi", "Xe")
             conf = obj.get("confidence", 0.0)
             track_id = obj.get("track_id")
+            speed_kmh = float(obj.get("speed_kmh", 0.0) or 0.0)
 
             color = color_map.get(cls_en, (0, 255, 0))
+            if speed_kmh >= speed_warning_threshold:
+                color = (0, 0, 255)
 
             # Bounding box
             self.draw_rounded_rectangle(out, (x1, y1), (x2, y2), color, thickness=self.thickness)
 
             # Chuẩn bị nội dung nhãn
             if track_id is not None:
-                label = f"#{track_id} {cls_vi} {conf:.2f}"
+                label = f"#{track_id} {cls_vi} {conf:.2f} {speed_kmh:.1f}km/h"
             else:
                 label = f"{cls_vi} {conf:.2f}"
 
@@ -130,7 +134,9 @@ class Visualizer:
         return out
 
     def draw_dashboard_hud(self, frame: np.ndarray, counts: Dict[str, int], total_count: int,
-                           fps: float = 0.0, directions: Optional[Dict[str, int]] = None) -> np.ndarray:
+                           fps: float = 0.0, directions: Optional[Dict[str, int]] = None,
+                           speed_summary: Optional[Dict[str, float]] = None,
+                           speed_warning_threshold: float = 50.0) -> np.ndarray:
         """
         Vẽ bảng điều khiển thống kê HUD (Heads-Up Display) bán trong suốt ở góc trên bên trái.
         """
@@ -139,7 +145,7 @@ class Visualizer:
 
         # Kích thước khung HUD
         hud_w = 260
-        hud_h = 210
+        hud_h = 250
         hud_x = 20
         hud_y = 20
 
@@ -197,6 +203,17 @@ class Visualizer:
             dir_text = f"Vao: {in_count} | Ra: {out_count}"
             cv2.putText(out, dir_text, (hud_x + 15, curr_y + 35),
                         self.font, 0.4, (180, 180, 180), 1, cv2.LINE_AA)
+
+        if speed_summary:
+            avg_speed = speed_summary.get("average_kmh", 0.0)
+            max_speed = speed_summary.get("max_kmh", 0.0)
+            warning_count = int(speed_summary.get("warning_count", 0))
+            speed_y = curr_y + 58
+            speed_color = (0, 0, 255) if warning_count else (180, 255, 180)
+            cv2.putText(out, f"Speed avg/max: {avg_speed:.1f}/{max_speed:.1f} km/h",
+                        (hud_x + 15, speed_y), self.font, 0.38, (220, 220, 220), 1, cv2.LINE_AA)
+            cv2.putText(out, f"WARNING > {speed_warning_threshold:.0f}: {warning_count}",
+                        (hud_x + 15, speed_y + 20), self.font, 0.4, speed_color, 2, cv2.LINE_AA)
 
         return out
 

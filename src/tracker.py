@@ -6,6 +6,7 @@ xử lý thuật toán cắt vạch ảo (Line Crossing) để đếm số lư�
 
 from typing import List, Dict, Tuple, Set, Any, Optional
 from collections import defaultdict
+import math
 import time
 import csv
 import os
@@ -24,7 +25,29 @@ def intersect(A: Tuple[int, int], B: Tuple[int, int], C: Tuple[int, int], D: Tup
     AB: Quỹ đạo di chuyển của tâm phương tiện từ frame trước tới frame này.
     CD: Vạch đếm ảo trên đường.
     """
-    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
+    def orientation(P, Q, R):
+        value = (Q[0] - P[0]) * (R[1] - P[1]) - (Q[1] - P[1]) * (R[0] - P[0])
+        return (value > 0) - (value < 0)
+
+    def on_segment(P, Q, R):
+        return (
+            min(P[0], R[0]) <= Q[0] <= max(P[0], R[0])
+            and min(P[1], R[1]) <= Q[1] <= max(P[1], R[1])
+        )
+
+    o1 = orientation(A, B, C)
+    o2 = orientation(A, B, D)
+    o3 = orientation(C, D, A)
+    o4 = orientation(C, D, B)
+    if o1 == 0 and on_segment(A, C, B):
+        return True
+    if o2 == 0 and on_segment(A, D, B):
+        return True
+    if o3 == 0 and on_segment(C, A, D):
+        return True
+    if o4 == 0 and on_segment(C, B, D):
+        return True
+    return o1 != o2 and o3 != o4
 
 
 class VehicleCounter:
@@ -33,7 +56,8 @@ class VehicleCounter:
     """
 
     def __init__(self, line_coords: Optional[Tuple[Tuple[int, int], Tuple[int, int]]] = None,
-                 polygon_coords: Optional[List[Tuple[int, int]]] = None):
+                 polygon_coords: Optional[List[Tuple[int, int]]] = None,
+                 pixels_per_meter: float = 10.0):
         """
         Khởi tạo bộ đếm.
         :param line_coords: Tọa độ vạch đếm ((x1, y1), (x2, y2)).
@@ -41,9 +65,13 @@ class VehicleCounter:
         """
         self.line_coords = line_coords  # ((x1, y1), (x2, y2))
         self.polygon_coords = polygon_coords  # [(x, y), ...]
+        self.pixels_per_meter = max(float(pixels_per_meter), 1e-6)
         
         # Lưu vết tâm của các đối tượng: {track_id: [(cx, cy), ...]}
         self.tracks_history: Dict[int, List[Tuple[int, int]]] = defaultdict(list)
+        self.track_timestamps: Dict[int, List[float]] = defaultdict(list)
+        self.speed_history: Dict[int, List[float]] = defaultdict(list)
+        self.current_speeds: Dict[int, float] = {}
         
         # Danh sách các ID đã đếm qua vạch để tránh đếm lặp
         self.counted_ids: Set[int] = set()
@@ -76,6 +104,9 @@ class VehicleCounter:
     def reset(self):
         """Khởi tạo lại toàn bộ bộ đếm và lịch sử."""
         self.tracks_history.clear()
+        self.track_timestamps.clear()
+        self.speed_history.clear()
+        self.current_speeds.clear()
         self.counted_ids.clear()
         for k in self.counts:
             self.counts[k] = 0
@@ -109,7 +140,7 @@ class VehicleCounter:
         cross_prod = line_dx * move_dy - line_dy * move_dx
         return "in" if cross_prod > 0 else "out"
 
-    def update(self, tracked_objects: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def update(self, tracked_objects: List[Dict[str, Any]], timestamp: Optional[float] = None) -> Dict[str, Any]:
         """
         Cập nhật quỹ đạo và kiểm tra xe vượt qua vạch đếm.
         
@@ -118,6 +149,7 @@ class VehicleCounter:
         """
         current_frame_counts = {"in": 0, "out": 0}
         new_crossed_events = []
+        frame_timestamp = time.monotonic() if timestamp is None else float(timestamp)
 
         current_ids = set()
 
@@ -130,12 +162,31 @@ class VehicleCounter:
             bbox = obj["bbox"]
             cls_en = obj.get("class_en", "car")
             center = self.get_center(bbox)
+            object_timestamp = float(obj.get("timestamp", frame_timestamp))
+            previous_points = self.tracks_history[track_id]
+            previous_timestamps = self.track_timestamps[track_id]
+            speed_kmh = 0.0
+            if previous_points and previous_timestamps:
+                elapsed = object_timestamp - previous_timestamps[-1]
+                if elapsed > 0:
+                    distance_pixels = math.hypot(
+                        center[0] - previous_points[-1][0],
+                        center[1] - previous_points[-1][1],
+                    )
+                    raw_speed = distance_pixels / self.pixels_per_meter / elapsed * 3.6
+                    self.speed_history[track_id].append(raw_speed)
+                    self.speed_history[track_id] = self.speed_history[track_id][-5:]
+                    speed_kmh = sum(self.speed_history[track_id]) / len(self.speed_history[track_id])
+            self.current_speeds[track_id] = speed_kmh
+            obj["speed_kmh"] = round(speed_kmh, 1)
 
             # Lưu vào lịch sử tâm
             self.tracks_history[track_id].append(center)
+            self.track_timestamps[track_id].append(object_timestamp)
             # Giữ tối đa 30 điểm lịch sử gần nhất để tiết kiệm RAM
             if len(self.tracks_history[track_id]) > 30:
                 self.tracks_history[track_id].pop(0)
+                self.track_timestamps[track_id].pop(0)
 
             # Kiểm tra cắt vạch hoặc đi vào vùng đa giác ROI
             has_prev = len(self.tracks_history[track_id]) >= 2
@@ -172,7 +223,10 @@ class VehicleCounter:
                     "class_en": cls_en,
                     "class_vi": obj.get("class_vi", "Xe"),
                     "direction": direction,
-                    "point": center
+                    "point": center,
+                    "speed_kmh": round(speed_kmh, 1),
+                    "speed_avg_kmh": round(self.get_track_speed_average(track_id), 1),
+                    "speed_max_kmh": round(self.get_track_speed_max(track_id), 1)
                 }
                 new_crossed_events.append(event_info)
                 self.events_log.append(event_info)
@@ -181,11 +235,18 @@ class VehicleCounter:
                     self.recent_events.pop(0)
 
         # Xóa bớt lịch sử của những track_id không còn xuất hiện trong hơn 50 frame
+        for sid in set(self.track_timestamps) - current_ids:
+            self.track_timestamps.pop(sid, None)
+            self.speed_history.pop(sid, None)
+            self.current_speeds.pop(sid, None)
         if len(self.tracks_history) > 200:
             active_ids = set(self.tracks_history.keys())
             stale_ids = active_ids - current_ids
             for sid in list(stale_ids)[:50]:
                 del self.tracks_history[sid]
+                self.track_timestamps.pop(sid, None)
+                self.speed_history.pop(sid, None)
+                self.current_speeds.pop(sid, None)
 
         total_vehicles = sum(self.counts.values())
         return {
@@ -199,6 +260,21 @@ class VehicleCounter:
         """Tổng số phương tiện đã đếm qua vạch."""
         return sum(self.counts.values())
 
+    def get_track_speed_average(self, track_id: int) -> float:
+        speeds = self.speed_history.get(track_id, [])
+        return sum(speeds) / len(speeds) if speeds else 0.0
+
+    def get_track_speed_max(self, track_id: int) -> float:
+        return max(self.speed_history.get(track_id, []), default=0.0)
+
+    def get_speed_summary(self, warning_threshold: float = 50.0) -> Dict[str, float]:
+        speeds = list(self.current_speeds.values())
+        return {
+            "average_kmh": sum(speeds) / len(speeds) if speeds else 0.0,
+            "max_kmh": max(speeds, default=0.0),
+            "warning_count": sum(1 for speed in speeds if speed >= warning_threshold),
+        }
+
     def export_csv(self, filepath: str) -> bool:
         """Xuất danh sách tất cả các lượt xe qua vạch ra file CSV."""
         if not self.events_log:
@@ -206,7 +282,7 @@ class VehicleCounter:
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
         with open(filepath, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["timestamp", "track_id", "class_en", "class_vi", "direction", "x", "y"])
+            writer.writerow(["timestamp", "track_id", "class_en", "class_vi", "direction", "x", "y", "speed_kmh", "speed_avg_kmh", "speed_max_kmh"])
             for e in self.events_log:
-                writer.writerow([e["timestamp"], e["track_id"], e["class_en"], e["class_vi"], e["direction"], e["point"][0], e["point"][1]])
+                writer.writerow([e["timestamp"], e["track_id"], e["class_en"], e["class_vi"], e["direction"], e["point"][0], e["point"][1], e.get("speed_kmh", 0.0), e.get("speed_avg_kmh", 0.0), e.get("speed_max_kmh", 0.0)])
         return True
