@@ -9,7 +9,8 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, create_engine, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, create_engine, select, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 
@@ -63,6 +64,8 @@ class ProcessingSession(Base):
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     source_name: Mapped[str] = mapped_column(String(500), default="")
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -71,6 +74,7 @@ class VehicleEvent(Base):
     __tablename__ = "vehicle_events"
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("processing_sessions.id", ondelete="CASCADE"), index=True)
+    event_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     camera_id: Mapped[int] = mapped_column(ForeignKey("cameras.id"), index=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), index=True)
     event_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -180,6 +184,35 @@ def user_has_role(user: User, role: str) -> bool:
 
 
 def create_event(session, processing_session_id: int, camera_id: int, location_id: int, event: dict[str, Any]) -> None:
+    create_events(session, processing_session_id, camera_id, location_id, [event])
+
+
+def create_events(session, processing_session_id: int, camera_id: int, location_id: int, events: list[dict[str, Any]]) -> None:
+    if not events:
+        return
+    rows = []
+    for event in events:
+        timestamp = event.get("timestamp")
+        if isinstance(timestamp, str):
+            event_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        else:
+            event_time = datetime.now(timezone.utc)
+        x, y = event.get("point", (0, 0))
+        source_timestamp = float(event.get("frame_timestamp", 0.0))
+        import hashlib
+        event_key = hashlib.sha256(f"{processing_session_id}:{event['track_id']}:{event_time.isoformat()}:{x}:{y}".encode()).hexdigest()
+        rows.append({
+            "session_id": processing_session_id, "event_key": event_key, "camera_id": camera_id,
+            "location_id": location_id, "event_time": event_time, "track_id": int(event["track_id"]),
+            "vehicle_type": event["class_en"], "vehicle_type_vi": event.get("class_vi", "Xe"),
+            "direction": event.get("direction", ""), "x": int(x), "y": int(y),
+            "source_timestamp": source_timestamp, "speed_kmh": float(event.get("speed_kmh", 0)),
+            "speed_avg_kmh": float(event.get("speed_avg_kmh", 0)), "speed_max_kmh": float(event.get("speed_max_kmh", 0)),
+        })
+    session.execute(pg_insert(VehicleEvent).values(rows).on_conflict_do_nothing(index_elements=["event_key"]))
+
+
+def _legacy_create_event(session, processing_session_id: int, camera_id: int, location_id: int, event: dict[str, Any]) -> None:
     timestamp = event.get("timestamp")
     if isinstance(timestamp, str):
         event_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
@@ -187,6 +220,7 @@ def create_event(session, processing_session_id: int, camera_id: int, location_i
         event_time = datetime.now(timezone.utc)
     x, y = event.get("point", (0, 0))
     session.add(VehicleEvent(
+        event_key=secrets.token_hex(32),
         session_id=processing_session_id, camera_id=camera_id, location_id=location_id,
         event_time=event_time, track_id=int(event["track_id"]), vehicle_type=event["class_en"],
         vehicle_type_vi=event.get("class_vi", "Xe"), direction=event.get("direction", ""),
@@ -203,6 +237,14 @@ def create_processing_session(session, camera_id: int, user_id: int | None, sour
 
 
 def finish_processing_session(session, item: ProcessingSession) -> None:
+    item.status = "completed"
+    item.finished_at = datetime.now(timezone.utc)
+    session.commit()
+
+
+def fail_processing_session(session, item: ProcessingSession, error_message: str) -> None:
+    item.status = "failed"
+    item.error_message = error_message[:1000]
     item.finished_at = datetime.now(timezone.utc)
     session.commit()
 
@@ -218,11 +260,15 @@ def list_cameras(session, location_id: int | None = None) -> list[Camera]:
     return list(session.scalars(query))
 
 
-def search_events(session, start: datetime, end: datetime, camera_id: int | None = None, location_id: int | None = None, vehicle_type: str | None = None):
+def list_all_cameras(session) -> list[Camera]:
+    return list(session.scalars(select(Camera).order_by(Camera.name)))
+
+
+def search_events(session, start: datetime, end: datetime, camera_id: int | None = None, location_id: int | None = None, vehicle_type: str | None = None, limit: int = 500, offset: int = 0):
     from sqlalchemy import text
     query = text("""
         SELECT e.event_time, l.name AS location, c.name AS camera,
-               e.vehicle_type, e.vehicle_type_vi, e.direction, e.track_id,
+               e.vehicle_type, e.vehicle_type_vi, e.direction, e.track_id, e.source_timestamp,
                e.speed_kmh, e.speed_avg_kmh, e.speed_max_kmh
         FROM vehicle_events e
         JOIN locations l ON l.id = e.location_id
@@ -232,7 +278,18 @@ def search_events(session, start: datetime, end: datetime, camera_id: int | None
           AND (:location_id IS NULL OR e.location_id = :location_id)
           AND (:vehicle_type IS NULL OR e.vehicle_type = :vehicle_type)
         ORDER BY e.event_time DESC
-        LIMIT 10000
+        LIMIT :limit OFFSET :offset
     """)
-    return session.execute(query, {"start": start, "end": end, "camera_id": camera_id, "location_id": location_id, "vehicle_type": vehicle_type}).mappings().all()
+    return session.execute(query, {"start": start, "end": end, "camera_id": camera_id, "location_id": location_id, "vehicle_type": vehicle_type, "limit": limit, "offset": offset}).mappings().all()
+
+
+def count_events(session, start: datetime, end: datetime, camera_id: int | None = None, location_id: int | None = None, vehicle_type: str | None = None) -> int:
+    query = select(func.count(VehicleEvent.id)).where(VehicleEvent.event_time >= start, VehicleEvent.event_time < end)
+    if camera_id is not None:
+        query = query.where(VehicleEvent.camera_id == camera_id)
+    if location_id is not None:
+        query = query.where(VehicleEvent.location_id == location_id)
+    if vehicle_type is not None:
+        query = query.where(VehicleEvent.vehicle_type == vehicle_type)
+    return int(session.scalar(query) or 0)
 
